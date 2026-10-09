@@ -341,6 +341,79 @@ const GifEngine = (() => {
     return buildPalette(samples, maxC, quantize);
   }
 
-  return { encode, previewFrame, globalPalette, delaysFor, prepare, mapFrame, makeMapper, lzw, Writer };
+  /* ---------- Lecture de la structure d'un GIF (sans décoder les pixels) ---------- */
+  function walk(bytes, onBlock) {
+    const b = bytes;
+    if (b.length < 13 || String.fromCharCode(b[0], b[1], b[2]) !== 'GIF') throw new Error('Pas un GIF');
+    let p = 13;
+    if (b[10] & 0x80) p += 3 * (1 << ((b[10] & 7) + 1));
+    const skipSub = (q) => { while (q < b.length && b[q] !== 0) q += b[q] + 1; return q + 1; };
+    const start = p;
+    while (p < b.length) {
+      const t = b[p];
+      if (t === 0x3b) { onBlock({ type: 'end', at: p, end: p + 1 }); return start; }
+      if (t === 0x21) {
+        const label = b[p + 1], end = skipSub(p + 2);
+        onBlock({ type: 'ext', label, at: p, end });
+        p = end;
+      } else if (t === 0x2c) {
+        let q = p + 10;
+        if (b[p + 9] & 0x80) q += 3 * (1 << ((b[p + 9] & 7) + 1));
+        const end = skipSub(q + 1);
+        onBlock({ type: 'image', at: p, end, x: b[p + 1] | (b[p + 2] << 8), y: b[p + 3] | (b[p + 4] << 8), w: b[p + 5] | (b[p + 6] << 8), h: b[p + 7] | (b[p + 8] << 8) });
+        p = end;
+      } else throw new Error('Bloc GIF inattendu à l’octet ' + p);
+    }
+    return start;
+  }
+
+  /* Dimensions, nombre de frames, délais (cs) et nombre de lectures (0 = infini, 1 = une seule) */
+  function gifInfo(bytes) {
+    const delays = [];
+    let pending = 0, loop = 1;
+    walk(bytes, (blk) => {
+      if (blk.type === 'ext' && blk.label === 0xf9) pending = bytes[blk.at + 4] | (bytes[blk.at + 5] << 8);
+      else if (blk.type === 'ext' && blk.label === 0xff && isLoopExt(bytes, blk.at)) {
+        const n = bytes[blk.at + 16] | (bytes[blk.at + 17] << 8);
+        loop = n === 0 ? 0 : n + 1;
+      } else if (blk.type === 'image') { delays.push(pending); pending = 0; }
+    });
+    return { width: bytes[6] | (bytes[7] << 8), height: bytes[8] | (bytes[9] << 8), frames: delays.length, delays,
+      durationCs: delays.reduce((a, b) => a + b, 0), loop };
+  }
+  function isLoopExt(b, at) {
+    if (b[at + 2] !== 11) return false;
+    const id = String.fromCharCode(...b.subarray(at + 3, at + 14));
+    return (id === 'NETSCAPE2.0' || id === 'ANIMEXTS1.0') && b[at + 14] >= 3 && b[at + 15] === 1;
+  }
+
+  /* Réécrit l'extension de boucle : 0 = infinie, 1 = une lecture (pas d'extension), N = N lectures */
+  function setLoop(bytes, loop) {
+    const cut = [];
+    const start = walk(bytes, (blk) => { if (blk.type === 'ext' && blk.label === 0xff && isLoopExt(bytes, blk.at)) cut.push(blk); });
+    const ext = loop === 1 ? [] : [0x21, 0xff, 11, ...'NETSCAPE2.0'.split('').map((c) => c.charCodeAt(0)), 3, 1, (loop ? loop - 1 : 0) & 255, ((loop ? loop - 1 : 0) >> 8) & 255, 0];
+    const removed = cut.reduce((s, c) => s + (c.end - c.at), 0);
+    const out = new Uint8Array(bytes.length - removed + ext.length);
+    out.set(bytes.subarray(0, start), 0);
+    out.set(ext, start);
+    let o = start + ext.length, p = start;
+    for (const c of cut) { out.set(bytes.subarray(p, c.at), o); o += c.at - p; p = c.end; }
+    out.set(bytes.subarray(p), o);
+    return out;
+  }
+
+  /* Aplatit l'alpha sur un fond (pour les moteurs qui doivent recevoir des frames opaques) */
+  function flatten(rgba, matte, out, offset = 0) {
+    const [mr, mg, mb] = matte;
+    for (let s = 0, d = offset; s < rgba.length; s += 4, d += 4) {
+      const a = rgba[s + 3];
+      if (a === 255) { out[d] = rgba[s]; out[d + 1] = rgba[s + 1]; out[d + 2] = rgba[s + 2]; }
+      else { const t = a / 255, u = 1 - t; out[d] = rgba[s] * t + mr * u + 0.5; out[d + 1] = rgba[s + 1] * t + mg * u + 0.5; out[d + 2] = rgba[s + 2] * t + mb * u + 0.5; }
+      out[d + 3] = 255;
+    }
+    return out;
+  }
+
+  return { encode, previewFrame, globalPalette, delaysFor, prepare, mapFrame, makeMapper, lzw, Writer, gifInfo, setLoop, flatten };
 })();
 if (typeof module !== 'undefined') module.exports = GifEngine;

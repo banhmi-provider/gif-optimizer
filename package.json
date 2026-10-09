@@ -1,11 +1,11 @@
 {
   "name": "gif-optimizer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Atelier GIF — convertisseur vidéo vers GIF, 100 % local dans le navigateur",
+  "description": "Atelier GIF — convertisseur vidéo vers GIF (moteur maison, gifski, gifsicle), 100 % local dans le navigateur",
   "scripts": {
     "test": "node --test test/run.mjs",
-    "serve": "python3 -m http.server 8080"
+    "serve": "node serve.mjs"
   },
   "devDependencies": {
     "gifenc": "1.0.3",

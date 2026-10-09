@@ -84,3 +84,53 @@ test('transparence 1 bit', async () => {
   for (let i = 3; i < f.length; i += 4) f[i] === 0 ? clear++ : solid++;
   assert.ok(clear > 0 && solid > 0);
 });
+
+/* ---------- Lecture de structure, boucle réécrite, aplatissement ---------- */
+test('gifInfo lit dimensions, frames, délais et boucle comme omggif', async () => {
+  for (const optimize of [false, true]) {
+    const r = await E.encode(frames, E.delaysFor(N, 24), { ...base, optimize, loop: 3 }, quantize);
+    const g = read(r.bytes), info = E.gifInfo(r.bytes);
+    assert.equal(info.width, W); assert.equal(info.height, H);
+    assert.equal(info.frames, g.numFrames());
+    assert.deepEqual(info.delays, Array.from({ length: g.numFrames() }, (_, i) => g.frameInfo(i).delay));
+    assert.equal(info.loop, 3);
+  }
+});
+
+test('setLoop réécrit, retire ou ajoute l’extension de boucle sans toucher aux images', async () => {
+  const r = await E.encode(frames.slice(0, 6), E.delaysFor(6, FPS), { ...base, loop: 0 }, quantize);
+  const ref = composite(read(r.bytes));
+  for (const [loop, expected] of [[0, 0], [1, null], [2, 1], [5, 4]]) {
+    const b = E.setLoop(r.bytes, loop), g = read(b);
+    assert.equal(g.loopCount(), expected, `loop ${loop}`);
+    assert.equal(E.gifInfo(b).loop, loop);
+    composite(g).forEach((f, i) => assert.ok(Buffer.from(f).equals(Buffer.from(ref[i])), `loop ${loop} frame ${i}`));
+  }
+  const once = E.setLoop(r.bytes, 1);
+  assert.equal(read(E.setLoop(once, 0)).loopCount(), 0);
+  assert.equal(E.setLoop(E.setLoop(r.bytes, 3), 3).length, E.setLoop(r.bytes, 3).length);
+});
+
+test('flatten : alpha fusionné sur le fond, pixels opaques intacts', () => {
+  const src = new Uint8ClampedArray([10, 20, 30, 255, 200, 0, 0, 0, 0, 0, 0, 128]);
+  const out = E.flatten(src, [255, 255, 255], new Uint8Array(12));
+  assert.deepEqual([...out], [10, 20, 30, 255, 255, 255, 255, 255, 127, 127, 127, 255]);
+});
+
+/* ---------- gifski (WebAssembly, version mono-cœur embarquée) ---------- */
+test('gifski : GIF valide, timing exact, boucle réglée après coup', async () => {
+  const fs = await import('node:fs');
+  const gs = await import('../vendor/gifski/gifski_wasm.js');
+  gs.initSync(fs.readFileSync(new URL('../vendor/gifski/gifski_wasm_bg.wasm', import.meta.url)));
+  const n = 12, buf = new Uint8Array(n * W * H * 4);
+  frames.slice(0, n).forEach((f, i) => E.flatten(f.data, [255, 255, 255], buf, i * W * H * 4));
+  const delays = E.delaysFor(n, 24);
+  const raw = gs.encode(buf, n, W, H, undefined, new Uint32Array(delays.map((d) => d * 10)), 90, undefined, undefined, undefined);
+  const g = read(raw);
+  assert.equal(g.width, W); assert.equal(g.height, H);
+  assert.equal(g.numFrames(), n);
+  assert.equal(totalCs(g), delays.reduce((a, b) => a + b));
+  assert.equal(g.loopCount(), 0);
+  assert.equal(read(E.setLoop(raw, 2)).loopCount(), 1);
+  composite(g);
+});

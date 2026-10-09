@@ -152,7 +152,34 @@ input[type="color"] { width: 44px; height: 30px; padding: 2px; border: 1px solid
 .status { min-height: 1.4em; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .status.err { color: var(--warn); font-weight: 600; }
 .status.ok { color: var(--ok); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .progress i { transition: none; } }
+.progress.busy i { width: 35% !important; animation: slide 1.1s ease-in-out infinite alternate; }
+@keyframes slide { from { transform: translateX(-10%); } to { transform: translateX(200%); } }
+@media (prefers-reduced-motion: reduce) { .progress i { transition: none; } .progress.busy i { animation: none; width: 100% !important; opacity: .5; } }
+
+/* Chaîne d'encodage + banc d'essai */
+.pipe { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pipe .step { border: 1px solid var(--line); border-radius: var(--r); padding: 2px 8px; background: var(--bg); }
+.pipe .step b { font-weight: 600; }
+.pipe .arrow { color: var(--muted); }
+.pipe .gain { color: var(--ok); font-weight: 600; }
+.bench { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.bench-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.bench-head h2 { margin: 0; font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.bench-scroll { overflow-x: auto; }
+.bench table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bench th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.bench td { padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.bench tr:last-child td { border-bottom: 0; }
+.bench td.num, .bench th.num { text-align: right; font-family: var(--font-data); }
+.bench tbody tr { cursor: pointer; }
+.bench tbody tr:hover { background: var(--surface-2); }
+.bench tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.bench tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.bench .best { color: var(--ok); font-weight: 600; }
+.bench .cfg { color: var(--muted); font-family: var(--font-data); font-size: 12.5px; }
+.bench-empty { padding: 12px 14px; margin: 0; }
+.cmd { font-family: var(--font-data); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 8px; overflow-wrap: anywhere; }
+.badge { font-family: var(--font-data); font-size: 12px; color: var(--muted); }
 
 html, body { margin: 0; }
 img { max-width: 100%; }
@@ -165,7 +192,7 @@ img { max-width: 100%; }
   <header class="bar">
     <div class="brand">
       <h1>Atelier GIF</h1>
-      <span class="spec">vidéo → GIF89a · local</span>
+      <span class="spec">vidéo → GIF89a · 100 % local · gifski + gifsicle en WebAssembly</span>
     </div>
     <div class="src">
       <span class="src-name" id="srcName">Démo intégrée</span>
@@ -222,9 +249,23 @@ img { max-width: 100%; }
           <button type="button" class="btn primary" id="dlBtn">Télécharger le GIF</button>
           <span class="hint" id="dlHint" hidden>Clic droit sur le GIF → Enregistrer l'image sous…</span>
         </div>
+        <div class="pipe" id="pipe"></div>
         <div class="swatches" id="swatches" aria-label="Palette"></div>
       </div>
-      <p class="privacy">Décodage, quantification et encodage tournent dans ton navigateur : aucun fichier n'est envoyé. Lecture native : H.264, HEVC, VP9/WebM (alpha compris), AV1, séquences PNG/JPG. Le ProRes n'est pas lu par Chrome : exporte en H.264, WebM ou séquence PNG.</p>
+
+      <section class="bench" id="bench" aria-label="Banc d'essai" hidden>
+        <div class="bench-head">
+          <h2>Banc d'essai</h2>
+          <button type="button" class="btn sm" id="compareBtn" title="Encode le même extrait avec les trois chaînes et compare">Comparer les 3 moteurs</button>
+        </div>
+        <div class="bench-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Chaîne</th><th>Réglages</th><th class="num">Taille</th><th class="num" title="Écart avec le premier encodage du même extrait (même largeur, cadence, sélection et sens)">vs réf.</th><th class="num">Temps</th></tr></thead>
+            <tbody id="benchRows"></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="privacy">Décodage, quantification et encodage tournent dans ton navigateur : aucun fichier n'est envoyé. gifski (pngquant) et gifsicle sont compilés en WebAssembly et chargés depuis ce dossier. Lecture native : H.264, HEVC, VP9/WebM (alpha compris), AV1, séquences PNG/JPG. Le ProRes n'est pas lu par Chrome : exporte en H.264, WebM ou séquence PNG.</p>
     </section>
 
     <aside class="panel" aria-label="Réglages">
@@ -244,6 +285,20 @@ img { max-width: 100%; }
             <input id="pName" maxlength="40" placeholder="Nom du preset" aria-label="Nom du preset">
             <button class="btn sm" type="submit">OK</button>
           </form>
+        </div>
+
+        <div class="group">
+          <h2>Moteur</h2>
+          <div class="seg" role="radiogroup" aria-label="Moteur d'encodage">
+            <label><input type="radio" name="engine" value="atelier">Atelier · réglable</label>
+            <label><input type="radio" name="engine" value="gifski">gifski · qualité max</label>
+          </div>
+          <p class="hint" id="engineHint"></p>
+          <div class="field" id="fGifskiQ">
+            <div class="lab"><label for="gifskiQuality">Qualité gifski</label><output id="gqOut" for="gifskiQuality">90</output></div>
+            <input type="range" id="gifskiQuality" min="1" max="100" step="1" value="90">
+            <p class="hint">100 = fidélité maximale, fichier lourd · 70–80 = bon compromis web. Le reste (palettes, tramage) est géré par gifski.</p>
+          </div>
         </div>
 
         <div class="group">
@@ -291,7 +346,7 @@ img { max-width: 100%; }
           </div>
         </div>
 
-        <div class="group">
+        <div class="group" id="groupColors">
           <h2>Couleurs</h2>
           <div class="field">
             <div class="lab"><label for="colors">Nombre de couleurs</label><output id="colorsOut" for="colors">256</output></div>
@@ -336,13 +391,13 @@ img { max-width: 100%; }
             <div class="lab"><label for="alphaThreshold">Seuil alpha</label><output id="thrOut" for="alphaThreshold">128</output></div>
             <input type="range" id="alphaThreshold" min="1" max="254" step="1" value="128">
           </div>
-          <div class="field">
+          <div class="field" id="fMatte">
             <div class="lab"><label for="matte">Fond (matte)</label></div>
             <div class="inline"><input type="color" id="matte" value="#ffffff"><span class="hint" id="matteHint">Les bords semi-transparents sont fusionnés sur cette couleur.</span></div>
           </div>
         </div>
 
-        <div class="group">
+        <div class="group" id="groupCompression">
           <h2>Compression</h2>
           <label class="toggle" for="optimize"><input type="checkbox" id="optimize">Optimisation inter-frames</label>
           <p class="hint" id="optHint">Seul le rectangle qui change est réécrit ; les frames identiques sont fusionnées.</p>
@@ -350,6 +405,17 @@ img { max-width: 100%; }
             <div class="lab"><label for="tolerance">Tolérance</label><output id="tolOut" for="tolerance">2</output></div>
             <input type="range" id="tolerance" min="0" max="32" step="1" value="2">
             <p class="hint">0 = sans perte. Plus haut = fichier plus léger, traînées possibles sur les zones fixes.</p>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Passe finale</h2>
+          <label class="toggle" for="gifsicle"><input type="checkbox" id="gifsicle">Recompresser avec gifsicle</label>
+          <div class="field" id="fLossy">
+            <div class="lab"><label for="lossy">Lossy</label><output id="lossyOut" for="lossy">40</output></div>
+            <input type="range" id="lossy" min="0" max="200" step="5" value="40">
+            <p class="hint">0 = optimisation sans perte seule · 20–40 = léger, quasi invisible · 80+ = fort, grain visible.</p>
+            <code class="cmd" id="gsCmd">gifsicle -O3 --lossy=40</code>
           </div>
         </div>
       </div>
@@ -375,15 +441,18 @@ img { max-width: 100%; }
   };
 
   /* ---------------- Réglages ---------------- */
-  const DEFAULTS = { width: 640, scaling: 'smooth', fps: 25, speed: 1, direction: 'forward', loop: 0, colors: 256, palette: 'global',
-    dither: 'sierra', strength: 75, bayerScale: 2, alpha: false, alphaThreshold: 128, matte: '#ffffff', optimize: true, tolerance: 2 };
+  const DEFAULTS = { engine: 'atelier', gifskiQuality: 90, width: 640, scaling: 'smooth', fps: 25, speed: 1, direction: 'forward', loop: 0, colors: 256, palette: 'global',
+    dither: 'sierra', strength: 75, bayerScale: 2, alpha: false, alphaThreshold: 128, matte: '#ffffff', optimize: true, tolerance: 2,
+    gifsicle: false, lossy: 40 };
   const PRESETS = [
     { id: 'b:equilibre', name: 'Équilibré', s: {} },
-    { id: 'b:leger', name: 'Web léger · Slack, Notion', s: { width: 480, fps: 15, colors: 128, dither: 'bayer', bayerScale: 3, tolerance: 6 } },
+    { id: 'b:gifski', name: 'gifski · qualité max', s: { engine: 'gifski', gifskiQuality: 90 } },
+    { id: 'b:gifski-web', name: 'gifski + lossy · Slack, Notion', s: { engine: 'gifski', gifskiQuality: 80, width: 480, fps: 20, gifsicle: true, lossy: 60 } },
+    { id: 'b:leger', name: 'Web léger · Atelier', s: { width: 480, fps: 15, colors: 128, dither: 'bayer', bayerScale: 3, tolerance: 6, gifsicle: true, lossy: 30 } },
     { id: 'b:qualite', name: 'Haute qualité · Dribbble', s: { width: 800, fps: 30, colors: 256, dither: 'fs', strength: 85, tolerance: 0 } },
     { id: 'b:flat', name: 'UI / aplats', s: { width: 640, colors: 64, dither: 'none', tolerance: 0 } },
     { id: 'b:pixel', name: 'Pixel art', s: { scaling: 'pixel', colors: 32, dither: 'none', tolerance: 0 } },
-    { id: 'b:email', name: 'Email', s: { width: 600, fps: 12, colors: 64, palette: 'motion', dither: 'bayer', bayerScale: 2, tolerance: 8 } },
+    { id: 'b:email', name: 'Email', s: { width: 600, fps: 12, colors: 64, palette: 'motion', dither: 'bayer', bayerScale: 2, tolerance: 8, gifsicle: true, lossy: 40 } },
   ];
   const KEYS = Object.keys(DEFAULTS);
   const clean = (o) => { const r = {}; for (const k of KEYS) if (o && o[k] !== undefined) r[k] = o[k]; return r; };
@@ -521,11 +590,11 @@ img { max-width: 100%; }
   };
   const frameCount = () => Math.max(1, Math.round(((tOut - tIn) / S.speed) * S.fps));
   const orderedCount = () => { const n = frameCount(); return S.direction === 'boomerang' && n > 2 ? n * 2 - 2 : n; };
-  const engineOpts = () => {
-    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(S.matte) || [0, 'ff', 'ff', 'ff'];
-    return { colors: S.colors, palette: S.palette, dither: S.dither, strength: S.strength / 100, bayerScale: S.bayerScale,
-      alpha: S.alpha, alphaThreshold: S.alphaThreshold, matte: [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)],
-      optimize: S.optimize, tolerance: S.tolerance, loop: +S.loop };
+  const engineOpts = (R = S) => {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(R.matte) || [0, 'ff', 'ff', 'ff'];
+    return { colors: R.colors, palette: R.palette, dither: R.dither, strength: R.strength / 100, bayerScale: R.bayerScale,
+      alpha: R.alpha, alphaThreshold: R.alphaThreshold, matte: [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)],
+      optimize: R.optimize, tolerance: R.tolerance, loop: +R.loop };
   };
   const extractKey = () => JSON.stringify([source && source.id, fmt(tIn, 3), fmt(tOut, 3), S.fps, S.speed, outSize().w, S.scaling]);
 
@@ -557,6 +626,10 @@ img { max-width: 100%; }
   }
 
   const HINTS = {
+    engine: {
+      atelier: 'Moteur maison : palette, dithering et compression inter-frames réglables, aperçu fidèle frame par frame. Rapide.',
+      gifski: 'pngquant + palettes inter-frames + dithering temporel : des milliers de couleurs par frame. Plus lent, un seul réglage.',
+    },
     palette: {
       global: 'Une palette pour tout le GIF : pas de scintillement, meilleure compression.',
       motion: 'Palette calculée sur ce qui bouge : idéal pour les fonds fixes et captures d’écran.',
@@ -579,7 +652,15 @@ img { max-width: 100%; }
     $('bayerScale').value = S.bayerScale; $('bayerOut').textContent = S.bayerScale;
     $('alpha').checked = S.alpha; $('alphaThreshold').value = S.alphaThreshold; $('thrOut').textContent = S.alphaThreshold;
     $('matte').value = S.matte; $('optimize').checked = S.optimize; $('tolerance').value = S.tolerance; $('tolOut').textContent = S.tolerance;
-    for (const name of ['scaling', 'palette', 'direction'])
+    const gs = S.engine === 'gifski';
+    $('gifskiQuality').value = S.gifskiQuality; $('gqOut').textContent = S.gifskiQuality;
+    $('fGifskiQ').hidden = !gs;
+    $('engineHint').textContent = HINTS.engine[S.engine] + (gs && gifski.threads ? ` Ici : ${gifski.threads > 1 ? gifski.threads + ' cœurs' : '1 cœur'}${gifski.mode === 'main' ? ', fil principal' : ''}.` : '');
+    $('groupColors').hidden = gs; $('groupCompression').hidden = gs;
+    $('gifsicle').checked = S.gifsicle; $('lossy').value = S.lossy; $('lossyOut').textContent = S.lossy;
+    $('fLossy').hidden = !S.gifsicle;
+    $('gsCmd').textContent = `gifsicle -O3${S.lossy > 0 ? ' --lossy=' + S.lossy : ''}`;
+    for (const name of ['engine', 'scaling', 'palette', 'direction'])
       document.querySelectorAll(`input[name="${name}"]`).forEach((r) => { r.checked = r.value === S[name]; });
     for (const [id, key] of [['widthChips', 'width'], ['fpsChips', 'fps'], ['colorChips', 'colors']])
       $(id).querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.v === +S[key])));
@@ -592,7 +673,9 @@ img { max-width: 100%; }
     $('ditherHint').textContent = HINTS.dither[S.dither];
     $('fStrength').hidden = !['fs', 'sierra', 'atkinson'].includes(S.dither);
     $('fBayer').hidden = S.dither !== 'bayer';
-    $('fThreshold').hidden = !S.alpha;
+    $('fThreshold').hidden = !S.alpha || gs;
+    $('fMatte').hidden = gs && S.alpha;
+    $('matteHint').textContent = gs ? 'Sans transparence, les bords semi-transparents sont fusionnés sur cette couleur avant gifski.' : 'Les bords semi-transparents sont fusionnés sur cette couleur.';
     $('optimize').disabled = S.alpha;
     $('optHint').textContent = S.alpha ? 'Désactivée avec la transparence : chaque frame est réécrite en entier.' : 'Seul le rectangle qui change est réécrit ; les frames identiques sont fusionnées.';
     $('fTol').hidden = !S.optimize || S.alpha;
@@ -611,7 +694,10 @@ img { max-width: 100%; }
   function set(patch, opts = {}) {
     for (const k of Object.keys(patch)) {
       let v = patch[k];
-      if (['width', 'fps', 'colors', 'strength', 'bayerScale', 'alphaThreshold', 'tolerance', 'loop'].includes(k)) v = Math.round(+v);
+      if (['width', 'fps', 'colors', 'strength', 'bayerScale', 'alphaThreshold', 'tolerance', 'loop', 'gifskiQuality', 'lossy'].includes(k)) v = Math.round(+v);
+      if (k === 'gifskiQuality') v = Math.max(1, Math.min(100, v || 90));
+      if (k === 'lossy') v = Math.max(0, Math.min(200, v || 0));
+      if (k === 'engine') v = v === 'gifski' ? 'gifski' : 'atelier';
       if (k === 'speed') v = +v;
       if (k === 'fps') v = Math.max(1, Math.min(50, v || 25));
       if (k === 'colors') v = Math.max(2, Math.min(256, v || 256));
@@ -635,7 +721,10 @@ img { max-width: 100%; }
   $('alpha').addEventListener('change', (e) => set({ alpha: e.target.checked }));
   $('optimize').addEventListener('change', (e) => set({ optimize: e.target.checked }));
   $('matte').addEventListener('input', (e) => set({ matte: e.target.value }));
-  for (const name of ['scaling', 'palette', 'direction'])
+  $('gifskiQuality').addEventListener('input', (e) => set({ gifskiQuality: e.target.value }));
+  $('gifsicle').addEventListener('change', (e) => set({ gifsicle: e.target.checked }));
+  $('lossy').addEventListener('input', (e) => set({ lossy: e.target.value }));
+  for (const name of ['engine', 'scaling', 'palette', 'direction'])
     document.querySelectorAll(`input[name="${name}"]`).forEach((r) => r.addEventListener('change', () => set({ [name]: r.value })));
 
   $('preset').addEventListener('change', (e) => {
@@ -683,7 +772,7 @@ img { max-width: 100%; }
     view = v;
     for (const [id, val] of [['tabSource', 'source'], ['tabPreview', 'preview'], ['tabResult', 'result']]) $(id).setAttribute('aria-selected', String(v === val));
     $('gifOut').hidden = v !== 'result'; viewCv.hidden = v === 'result';
-    if (v === 'result' && result) $('stageNote').textContent = `GIF exporté · ${result.stats.width}×${result.stats.height} · lu par le navigateur`;
+    if (v === 'result' && result) $('stageNote').textContent = `GIF exporté · ${result.info.width}×${result.info.height} · ${result.steps.map((x) => x.name).join(' → ')}`;
     applyZoom(); schedulePreview(true);
   }
   function applyZoom() {
@@ -719,9 +808,11 @@ img { max-width: 100%; }
       if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
       await source.drawFrame(playhead + 0.001, wctx, w, h, S.scaling);
       if (viewCv.width !== w || viewCv.height !== h) { viewCv.width = w; viewCv.height = h; }
-      if (view === 'source' || !quantize) {
+      if (view === 'source' || !quantize || S.engine === 'gifski') {
         vctx.clearRect(0, 0, w, h); vctx.drawImage(work, 0, 0);
-        $('stageNote').textContent = quantize ? 'Source · ' + w + '×' + h : 'Source · encodeur en chargement';
+        $('stageNote').textContent = view === 'source' ? 'Source · ' + w + '×' + h
+          : S.engine === 'gifski' ? `Source · ${w}×${h} · gifski n'a pas d'aperçu par frame : encode pour juger`
+          : 'Source · encodeur en chargement';
       } else {
         const img = wctx.getImageData(0, 0, w, h);
         const o = engineOpts();
@@ -807,13 +898,14 @@ img { max-width: 100%; }
   window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
 
   /* ---------------- Encodage ---------------- */
-  let job = null, result = null, resultUrl = null;
+  let job = null, result = null;
   const mc = new MessageChannel(), waiters = [];
   mc.port1.onmessage = () => { const r = waiters.shift(); if (r) r(); };
   const tick = () => new Promise((r) => { waiters.push(r); mc.port2.postMessage(0); });
   let lastPaint = 0;
   const tickPaint = () => { const now = performance.now(); if (now - lastPaint > 60) { lastPaint = now; return new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 120); }); } return tick(); };
-  function setProgress(p, label) { $('bar').style.width = Math.round(p * 100) + '%'; if (label) status(`${label}… ${Math.round(p * 100)} %`); }
+  function setBusy(on) { $('bar').parentElement.classList.toggle('busy', on); }
+  function setProgress(p, label) { setBusy(false); $('bar').style.width = Math.round(p * 100) + '%'; if (label) status(`${job && job.label ? job.label : ''}${label}… ${Math.round(p * 100)} %`); }
   function status(msg, kind) { const el = $('status'); el.textContent = msg || ''; el.className = 'status' + (kind ? ' ' + kind : ''); }
 
   async function extract(j) {
@@ -832,66 +924,267 @@ img { max-width: 100%; }
     }
     return frames;
   }
+  async function framesFor(j) {
+    const key = extractKey();
+    if (cache && cache.key === key) return 0;
+    cache = null; palMemo = null;
+    const frames = await extract(j);
+    cache = { key, frames };
+    return 0.5;
+  }
+  function ordered(R) {
+    const f = cache.frames;
+    if (R.direction === 'reverse') return f.slice().reverse();
+    if (R.direction === 'boomerang' && f.length > 2) return f.concat(f.slice(1, -1).reverse());
+    return f;
+  }
 
-  async function runEncode() {
-    if (!quantize || !source) return;
-    if (job) { job.cancelled = true; return; }
-    const j = (job = { cancelled: false });
-    $('encodeBtn').textContent = 'Annuler';
-    const t0 = performance.now();
+  /* gifski : worker module (multi-cœurs si la page est isolée), sinon fil principal en dernier recours */
+  const gifski = { worker: null, ready: null, threads: 0, mode: '', seq: 0, main: null };
+  function gifskiWorker() {
+    if (gifski.ready) return gifski.ready;
+    gifski.ready = new Promise((resolve) => {
+      let w = null, settled = false;
+      const done = (worker) => { if (settled) return; settled = true; clearTimeout(to); resolve(worker); };
+      const fallback = () => { try { if (w) w.terminate(); } catch {} gifski.worker = null; gifski.mode = 'main'; gifski.threads = 1; render(); done(null); };
+      const to = setTimeout(fallback, 20000);
+      try { w = new Worker('gifski-worker.js', { type: 'module' }); } catch { fallback(); return; }
+      w.onmessage = (e) => {
+        if (e.data.type === 'ready') { w.onmessage = null; w.onerror = null; gifski.worker = w; gifski.mode = 'worker'; gifski.threads = e.data.threads; render(); done(w); }
+        else if (e.data.type === 'error') fallback();
+      };
+      w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); fallback(); };
+      w.postMessage({ type: 'warm' });
+    });
+    return gifski.ready;
+  }
+  function resetGifski() { if (gifski.worker) gifski.worker.terminate(); gifski.worker = null; gifski.ready = null; }
+  function gifskiOnMain() {
+    if (!gifski.main) gifski.main = (async () => {
+      const m = await import('./vendor/gifski/gifski_wasm.js');
+      await m.default(new URL('vendor/gifski/gifski_wasm_bg.wasm', document.baseURI));
+      return m;
+    })();
+    return gifski.main;
+  }
+
+  const GIFSKI_MAX = 480 * 1048576;
+  async function gifskiEncode(frames, delays, R, j) {
+    const w = frames[0].width, h = frames[0].height, n = frames.length, size = w * h * 4;
+    if (n < 2) throw new Error('gifski-1frame');
+    if (n * size > GIFSKI_MAX) throw new Error('mem-gifski');
+    const matte = engineOpts(R).matte, buf = new Uint8Array(n * size);
+    for (let i = 0; i < n; i++) {
+      if (R.alpha) buf.set(frames[i].data, i * size); else GifEngine.flatten(frames[i].data, matte, buf, i * size);
+      if (i % 10 === 0) { setProgress(0.5 * (i / n), 'Préparation pour gifski'); await tick(); }
+      if (j.cancelled) throw new Error('cancelled');
+    }
+    const durations = new Uint32Array(delays.map((d) => d * 10));
+    const worker = await gifskiWorker();
+    if (j.cancelled) throw new Error('cancelled');
+    const t0 = performance.now(), cores = gifski.threads > 1 ? `${gifski.threads} cœurs` : '1 cœur';
+    const label = () => status(`${j.label || ''}gifski encode ${n} frames sur ${cores}… ${fmt((performance.now() - t0) / 1000, 0)} s`);
+    label(); setBusy(true);
+    const timer = setInterval(label, 250);
     try {
-      const key = extractKey();
-      let base = 0;
-      if (!cache || cache.key !== key) {
-        cache = null; palMemo = null;
-        const frames = await extract(j);
-        cache = { key, frames }; base = 0.5;
+      if (!worker) {
+        status(`${j.label || ''}gifski sur le fil principal (workers bloqués ici) : la page se fige le temps de l'encodage…`);
+        await new Promise((r) => setTimeout(r, 80));
+        let mod;
+        try { mod = await gifskiOnMain(); } catch (e) { gifski.main = null; console.error(e); throw new Error('gifski-unavailable'); }
+        try { return mod.encode(buf, n, w, h, undefined, durations, R.gifskiQuality, undefined, undefined, undefined); }
+        catch (e) { gifski.main = null; throw new Error('gifski : ' + (e.message || e)); }
       }
-      let frames = cache.frames;
-      if (S.direction === 'reverse') frames = frames.slice().reverse();
-      else if (S.direction === 'boomerang' && frames.length > 2) frames = frames.concat(frames.slice(1, -1).reverse());
-      const delays = GifEngine.delaysFor(frames.length, S.fps);
-      const r = await GifEngine.encode(frames, delays, engineOpts(), quantize, {
+      return await new Promise((resolve, reject) => {
+        const id = ++gifski.seq;
+        j.abort = () => { resetGifski(); reject(new Error('cancelled')); };
+        worker.onmessage = (e) => {
+          if (e.data.id !== id) return;
+          worker.onmessage = null; j.abort = null;
+          if (e.data.type === 'done') resolve(e.data.bytes);
+          else { resetGifski(); reject(new Error('gifski : ' + e.data.error)); }
+        };
+        worker.onerror = () => { j.abort = null; resetGifski(); reject(new Error('gifski : le worker s’est arrêté (mémoire ?)')); };
+        worker.postMessage({ id, frames: buf, count: n, width: w, height: h, durations, quality: R.gifskiQuality }, [buf.buffer, durations.buffer]);
+      });
+    } finally { clearInterval(timer); setBusy(false); }
+  }
+
+  /* gifsicle : passe finale -O3 (+ lossy). Son worker est créé depuis un blob : on vérifie d'abord qu'ils sont permis. */
+  let gsMod = null, blobWorkers = null;
+  function canBlobWorker() {
+    if (blobWorkers !== null) return blobWorkers;
+    try { const u = URL.createObjectURL(new Blob([''], { type: 'text/javascript' })); const w = new Worker(u); w.terminate(); URL.revokeObjectURL(u); blobWorkers = true; }
+    catch { blobWorkers = false; }
+    return blobWorkers;
+  }
+  async function gifsiclePass(bytes, lossy) {
+    if (!canBlobWorker()) throw new Error('gifsicle-blocked');
+    if (!gsMod) gsMod = import('./vendor/gifsicle/gifsicle.min.js').then((m) => m.default).catch((e) => { gsMod = null; throw e; });
+    const g = await gsMod;
+    const cmd = `-O3${lossy > 0 ? ' --lossy=' + lossy : ''} in.gif -o /out/out.gif`;
+    const out = await Promise.race([
+      g.run({ input: [{ file: bytes.slice().buffer, name: 'in.gif' }], command: [cmd] }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('gifsicle : délai dépassé')), 180000)),
+    ]);
+    if (!out || !out[0]) throw new Error('gifsicle n’a rien renvoyé');
+    return new Uint8Array(await out[0].arrayBuffer());
+  }
+
+  const DITHER_SHORT = { none: 'sans tramage', bayer: 'Bayer', fs: 'Floyd–Steinberg', sierra: 'Sierra Lite', atkinson: 'Atkinson' };
+  const engineLabel = (R) => (R.engine === 'gifski' ? `gifski q${R.gifskiQuality}` : 'Atelier');
+  const cfgLabel = (e) => {
+    const R = e.R, base = `${e.info.width} px · ${R.fps} i/s`;
+    if (R.engine === 'gifski') return `${base} · qualité ${R.gifskiQuality}${R.alpha ? ' · alpha' : ''}`;
+    return `${base} · ${R.palette === 'local' ? 'palettes locales' : e.colors + ' c'} · ${DITHER_SHORT[R.dither]}${R.optimize && !R.alpha ? ' · inter-frames' : ''}`;
+  };
+
+  async function encodeOnce(R, j, base) {
+    const frames = ordered(R), delays = GifEngine.delaysFor(frames.length, R.fps);
+    const t0 = performance.now();
+    let bytes, palette = null, colors = null;
+    if (R.engine === 'gifski') {
+      bytes = GifEngine.setLoop(await gifskiEncode(frames, delays, R, j), +R.loop);
+    } else {
+      const r = await GifEngine.encode(frames, delays, engineOpts(R), quantize, {
         tick: tickPaint, cancelled: () => j.cancelled,
         progress: (p, label) => setProgress(base + p * (1 - base), label),
       });
-      showResult(r, (performance.now() - t0) / 1000);
-    } catch (e) {
-      if (e.message === 'cancelled') status('Encodage annulé.');
-      else if (e.message === 'mem') status('Trop lourd pour la mémoire du navigateur : réduis la largeur, les images/s ou la durée.', 'err');
-      else { console.error(e); status('L’encodage a échoué : ' + (e.message || e), 'err'); }
-      setProgress(0);
-    } finally {
-      job = null;
-      $('encodeBtn').textContent = 'Encoder le GIF';
+      bytes = r.bytes; palette = r.stats.palette; colors = r.stats.colors;
     }
+    if (j.cancelled) throw new Error('cancelled');
+    const ms = performance.now() - t0;
+    return { bytes, palette, colors, R, ms, steps: [{ name: engineLabel(R), size: bytes.length, ms }] };
+  }
+  async function applyFinal(e, lossy, j) {
+    const t1 = performance.now();
+    setBusy(true); status(`${j.label || ''}gifsicle -O3${lossy ? ' --lossy=' + lossy : ''}…`);
+    const R = { ...e.R, gifsicle: true, lossy };
+    try {
+      const g = await gifsiclePass(e.bytes, lossy);
+      if (j.cancelled) throw new Error('cancelled');
+      const ms = performance.now() - t1, kept = g.length < e.bytes.length;
+      return { ...e, R, bytes: kept ? g : e.bytes, ms: e.ms + ms, steps: [...e.steps, { name: `gifsicle${lossy ? ' lossy ' + lossy : ' -O3'}`, size: g.length, ms, kept }] };
+    } catch (err) {
+      if (err.message === 'cancelled') throw err;
+      if (err.message !== 'gifsicle-blocked') console.error(err);
+      const why = err.message === 'gifsicle-blocked' ? 'bloqué dans cette vue (workers interdits) : lance l’outil en local' : 'a échoué';
+      return { ...e, R, steps: [...e.steps, { name: 'gifsicle', error: why }] };
+    } finally { setBusy(false); }
+  }
+
+  function handleError(e) {
+    if (e.message === 'cancelled') status('Encodage annulé.');
+    else if (e.message === 'mem') status('Trop lourd pour la mémoire du navigateur : réduis la largeur, les images/s ou la durée.', 'err');
+    else if (e.message === 'mem-gifski') status('Trop lourd pour gifski dans le navigateur (480 Mo de frames max) : réduis la largeur, les images/s ou la durée.', 'err');
+    else if (e.message === 'gifski-1frame') status('gifski a besoin d’au moins 2 frames : allonge la sélection.', 'err');
+    else if (e.message === 'gifski-unavailable') status('gifski ne peut pas se charger dans cette vue (WebAssembly bloqué). Lance l’outil en local avec « npm run serve ».', 'err');
+    else { console.error(e); status('L’encodage a échoué : ' + (e.message || e), 'err'); }
+    setProgress(0);
+  }
+  function startJob(label) {
+    const j = (job = { cancelled: false, abort: null, label });
+    $('encodeBtn').textContent = 'Annuler'; $('compareBtn').disabled = true;
+    return j;
+  }
+  function endJob() { job = null; $('encodeBtn').textContent = 'Encoder le GIF'; $('compareBtn').disabled = false; }
+
+  async function runEncode() {
+    if (!quantize || !source) return;
+    if (job) { job.cancelled = true; if (job.abort) job.abort(); return; }
+    const R = { ...S }, j = startJob('');
+    try {
+      const base = await framesFor(j);
+      let e = await encodeOnce(R, j, base);
+      if (R.gifsicle) e = await applyFinal(e, R.lossy, j);
+      addBench(e); showResult(e);
+    } catch (e) { handleError(e); } finally { endJob(); }
   }
   $('encodeBtn').addEventListener('click', runEncode);
 
+  async function runCompare() {
+    if (!quantize || !source || job) return;
+    const lossy = S.gifsicle && S.lossy ? S.lossy : 40;
+    const j = startJob('');
+    try {
+      const base = await framesFor(j);
+      j.label = 'Comparaison 1/3 · ';
+      const a = await encodeOnce({ ...S, engine: 'atelier', gifsicle: false }, j, base);
+      addBench(a); showResult(a, true);
+      j.label = 'Comparaison 2/3 · ';
+      const b = await encodeOnce({ ...S, engine: 'gifski', gifsicle: false }, j, 0);
+      addBench(b); showResult(b, true);
+      j.label = 'Comparaison 3/3 · ';
+      const c = await applyFinal(b, lossy, j);
+      addBench(c); showResult(c, true);
+      const best = [a, b, c].reduce((m, x) => (x.bytes.length < m.bytes.length ? x : m));
+      status(`Comparaison terminée : la plus légère est « ${best.steps.map((s) => s.name).join(' → ')} ». Clique une ligne pour la revoir et la télécharger.`, 'ok');
+    } catch (e) { handleError(e); } finally { endJob(); }
+  }
+  $('compareBtn').addEventListener('click', runCompare);
+  document.querySelectorAll('input[name="engine"]').forEach((r) => r.addEventListener('change', () => { if (S.engine === 'gifski') gifskiWorker(); }));
+
+  /* ---------------- Résultat + banc d'essai ---------------- */
   const fmtSize = (b) => b >= 1048576 ? `${fmt(b / 1048576, 2)} Mo` : `${fmt(b / 1024, 0)} Ko`;
-  function showResult(r, secs) {
-    result = r;
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
-    resultUrl = URL.createObjectURL(new Blob([r.bytes], { type: 'image/gif' }));
+  const bench = []; let benchSeq = 0;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function addBench(e) {
+    e.id = ++benchSeq;
+    e.key = JSON.stringify([cache && cache.key, e.R.direction]);
+    e.info = GifEngine.gifInfo(e.bytes);
+    e.url = URL.createObjectURL(new Blob([e.bytes], { type: 'image/gif' }));
+    bench.push(e);
+    while (bench.length > 10) { const old = bench.shift(); if (old !== result) URL.revokeObjectURL(old.url); }
+    renderBench();
+  }
+  function renderBench() {
+    $('bench').hidden = !bench.length;
+    const ref = (e) => bench.find((x) => x.key === e.key);
+    const minOf = (e) => Math.min(...bench.filter((x) => x.key === e.key).map((x) => x.bytes.length));
+    const groupSize = (e) => bench.filter((x) => x.key === e.key).length;
+    $('benchRows').innerHTML = bench.map((e) => {
+      const first = ref(e), minSize = minOf(e);
+      const d = first && e !== first ? Math.round((e.bytes.length / first.bytes.length - 1) * 100) : null;
+      const chain = e.steps.map((s) => s.error ? `<s>${esc(s.name)}</s>` : esc(s.name)).join(' → ');
+      return `<tr data-id="${e.id}" aria-selected="${e === result}" tabindex="0">
+        <td class="num">${e.id}</td><td>${chain}</td><td class="cfg">${esc(cfgLabel(e))}</td>
+        <td class="num${e.bytes.length === minSize && groupSize(e) > 1 ? ' best' : ''}">${fmtSize(e.bytes.length)}</td>
+        <td class="num">${d === null ? '—' : (d > 0 ? '+' : '') + d + ' %'}</td><td class="num">${fmt(e.ms / 1000, 1)} s</td></tr>`;
+    }).join('');
+  }
+  function pickRow(tr) { const e = tr && bench.find((x) => x.id === +tr.dataset.id); if (e) showResult(e); }
+  $('benchRows').addEventListener('click', (ev) => pickRow(ev.target.closest('tr')));
+  $('benchRows').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pickRow(ev.target.closest('tr')); } });
+
+  function showResult(e, quiet) {
+    result = e;
     const img = $('gifOut');
     img.onload = () => applyZoom();
-    img.src = resultUrl;
-    const s = r.stats;
-    $('rSize').textContent = fmtSize(r.bytes.length);
-    const merged = s.merged ? ` (${s.merged} fusionnées)` : '';
-    const loopTxt = +S.loop === 0 ? 'boucle infinie' : +S.loop === 1 ? '1 lecture' : `${S.loop} lectures`;
-    $('rStats').textContent = `${s.width}×${s.height} · ${s.frames} frames écrites${merged} · ${fmt(s.durationCs / 100)} s · ${S.palette === 'local' ? 'palettes par frame' : s.colors + ' couleurs'} · ${loopTxt} · encodé en ${fmt(secs, 1)} s`;
+    img.src = e.url;
+    const s = e.info, R = e.R;
+    $('rSize').textContent = fmtSize(e.bytes.length);
+    const loopTxt = s.loop === 0 ? 'boucle infinie' : s.loop === 1 ? '1 lecture' : `${s.loop} lectures`;
+    const colorsTxt = R.engine === 'gifski' ? 'milliers de couleurs' : R.palette === 'local' ? 'palettes par frame' : e.colors + ' couleurs';
+    $('rStats').textContent = `${s.width}×${s.height} · ${s.frames} frames · ${fmt(s.durationCs / 100)} s · ${colorsTxt} · ${loopTxt} · ${fmt(e.ms / 1000, 1)} s`;
+    $('pipe').innerHTML = e.steps.map((st, i) => {
+      if (st.error) return `<span class="arrow">→</span><span class="step"><b>${esc(st.name)}</b> ${esc(st.error)}</span>`;
+      const prev = i ? e.steps[i - 1].size : 0;
+      const gain = i && prev ? Math.round((1 - st.size / prev) * 100) : null;
+      const g = gain === null ? '' : st.kept ? ` <span class="gain">−${gain} %</span>` : ' (aucun gain, ignoré)';
+      return `${i ? '<span class="arrow">→</span>' : ''}<span class="step"><b>${esc(st.name)}</b> ${fmtSize(st.size)} · ${fmt(st.ms / 1000, 1)} s${g}</span>`;
+    }).join('');
     const sw = $('swatches'); sw.innerHTML = '';
-    if (s.palette) for (let i = 0; i < s.palette.length; i += 3) {
-      const el = document.createElement('i'); el.style.background = `rgb(${s.palette[i]},${s.palette[i + 1]},${s.palette[i + 2]})`;
-      el.title = '#' + [0, 1, 2].map((k) => s.palette[i + k].toString(16).padStart(2, '0')).join('');
+    if (e.palette) for (let i = 0; i < e.palette.length; i += 3) {
+      const el = document.createElement('i'); el.style.background = `rgb(${e.palette[i]},${e.palette[i + 1]},${e.palette[i + 2]})`;
+      el.title = '#' + [0, 1, 2].map((k) => e.palette[i + k].toString(16).padStart(2, '0')).join('');
       sw.appendChild(el);
     }
     $('result').hidden = false;
     $('tabResult').disabled = false;
     setView('result');
     setProgress(1);
-    status(`GIF prêt : ${fmtSize(r.bytes.length)}.`, 'ok');
+    renderBench();
+    if (!quiet) status(`GIF prêt : ${fmtSize(e.bytes.length)}.`, 'ok');
   }
 
   /* ---------------- Téléchargement (capacité downloads) ---------------- */
@@ -918,7 +1211,9 @@ img { max-width: 100%; }
   $('dlBtn').addEventListener('click', () => {
     if (!result) return;
     const base = ((source && (source.fileBase || source.name)) || 'animation').replace(/\.[^.]+$/, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'animation';
-    offerFile(`${base}_${result.stats.width}px_${S.fps}fps_${S.palette === 'local' ? 'local' : result.stats.colors + 'c'}.gif`, new Blob([result.bytes], { type: 'image/gif' }));
+    const R = result.R, tag = R.engine === 'gifski' ? `gifski-q${R.gifskiQuality}` : R.palette === 'local' ? 'local' : result.colors + 'c';
+    const lossy = result.steps.some((x) => x.kept) ? `_lossy${R.lossy}` : '';
+    offerFile(`${base}_${result.info.width}px_${R.fps}fps_${tag}${lossy}.gif`, new Blob([result.bytes], { type: 'image/gif' }));
   });
 
   /* ---------------- Démarrage ---------------- */
@@ -929,15 +1224,16 @@ img { max-width: 100%; }
     await useSource(demoSource());
     status('Démo chargée. Importe une vidéo ou dépose-la n’importe où.');
     try {
-      const m = await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
+      const m = await import('./vendor/gifenc/gifenc.esm.js');
       quantize = m.quantize;
       $('encodeBtn').disabled = false; $('encodeBtn').textContent = 'Encoder le GIF';
       schedulePreview(true);
-      await runEncode();
+      if (S.engine === 'gifski') { status('Démo chargée. Moteur gifski sélectionné : clique « Encoder le GIF ».'); gifskiWorker(); }
+      else { await runEncode(); gifskiWorker(); }
     } catch (e) {
       console.error(e);
       $('encodeBtn').textContent = 'Encodeur indisponible';
-      status('Le quantificateur (gifenc) n’a pas pu se charger. Vérifie la connexion puis recharge la page.', 'err');
+      status(location.protocol === 'file:' ? 'Ouvert en file:// : le navigateur bloque les modules. Lance « npm run serve » puis ouvre http://localhost:8080.' : 'Le quantificateur (gifenc) n’a pas pu se charger. Recharge la page.', 'err');
     }
   })();
 })();
