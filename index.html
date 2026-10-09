@@ -120,7 +120,8 @@ button, input, select { font: inherit; color: inherit; }
 .privacy { font-size: 12.5px; color: var(--muted); }
 
 /* Rail de réglages */
-.panel { position: sticky; top: env(safe-area-inset-top, 0px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); max-height: calc(100vh - 24px); }
+/* Hauteur bornée pour que « Encoder » et le statut restent visibles dès l'ouverture, sous la barre de titre */
+.panel { position: sticky; top: env(safe-area-inset-top, 0px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); max-height: calc(100vh - 100px); }
 @media (max-width: 960px) { .panel { position: static; max-height: none; } }
 .panel-scroll { overflow-y: auto; padding: 4px 16px 8px; }
 .group { padding-block: 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
