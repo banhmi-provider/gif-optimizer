@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Convertisseur vidéo vers GIF, 100 % local dans le navigateur.">
+<title>Atelier GIF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Inconsolata:wght@400;600&display=swap">
+<style>
+/* Layout : établi en deux volets — scène + timeline + résultat à gauche, rail de réglages à droite ; une colonne sur mobile */
+:root {
+  --bg: #FFF8E8;
+  --surface: #FFFDF6;
+  --surface-2: #F5EDDA;
+  --line: #E6DAC0;
+  --fg: #0A0A0A;
+  --muted: #6B6B6B;
+  --accent: #0020AD;
+  --accent-strong: #001480;
+  --on-accent: #FFF8E8;
+  --check-a: #EEE5CF;
+  --check-b: #FAF4E5;
+  --ok: #1D6E46;
+  --warn: #9A5800;
+  --font-display: 'Funnel Display', 'Funnel Sans', system-ui, sans-serif;
+  --font-body: 'Funnel Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'Inconsolata', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --r: 3px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E0E11; --surface: #16161B; --surface-2: #1F1F26; --line: #2D2D37;
+    --fg: #F4EEDF; --muted: #9D998F; --accent: #8E9CFF; --accent-strong: #B3BCFF; --on-accent: #0A0A0A;
+    --check-a: #1A1A20; --check-b: #23232B; --ok: #5BC48F; --warn: #E6A84E; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E0E11; --surface: #16161B; --surface-2: #1F1F26; --line: #2D2D37;
+  --fg: #F4EEDF; --muted: #9D998F; --accent: #8E9CFF; --accent-strong: #B3BCFF; --on-accent: #0A0A0A;
+  --check-a: #1A1A20; --check-b: #23232B; --ok: #5BC48F; --warn: #E6A84E; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; accent-color: var(--accent); }
+button, input, select { font: inherit; color: inherit; }
+.app { max-width: 1380px; margin: 0 auto; padding-inline: 20px; padding-block: 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Barre */
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 4px 14px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 760; font-size: 26px; letter-spacing: -0.02em; line-height: 1; }
+.brand .spec { font-family: var(--font-data); font-size: 13px; color: var(--muted); }
+.src { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.src-name { font-family: var(--font-data); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Boutons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding-inline: 14px; border: 1px solid var(--fg); background: transparent; border-radius: var(--r); cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.big { height: 48px; font-size: 16px; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em; width: 100%; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Grille */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+@media (max-width: 960px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* Scène */
+.stage-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.tabs, .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.tabs button, .seg label { border: 0; background: transparent; padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); border-right: 1px solid var(--line); }
+.tabs button:last-child, .seg label:last-child { border-right: 0; }
+.tabs button[aria-selected="true"], .tabs button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.tabs button:disabled { opacity: .4; cursor: not-allowed; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--fg); color: var(--bg); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stage { position: relative; height: min(58vh, 600px); min-height: 240px; border: 1px solid var(--line); border-radius: var(--r); overflow: auto;
+  background-color: var(--check-b);
+  background-image: linear-gradient(45deg, var(--check-a) 25%, transparent 25%), linear-gradient(-45deg, var(--check-a) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--check-a) 75%), linear-gradient(-45deg, transparent 75%, var(--check-a) 75%);
+  background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+.stage-inner { min-width: 100%; min-height: 100%; display: grid; place-items: center; padding: 12px; }
+.stage canvas, .stage img { display: block; }
+.stage.fit canvas, .stage.fit img { max-width: 100%; max-height: calc(min(58vh, 600px) - 26px); width: auto; height: auto; }
+.stage.zoom canvas, .stage.zoom img { image-rendering: pixelated; max-width: none; }
+.stage-note { position: absolute; left: 10px; bottom: 10px; font-family: var(--font-data); font-size: 12px; background: var(--surface); border: 1px solid var(--line); padding: 2px 8px; border-radius: var(--r); color: var(--muted); }
+.drop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 88%, transparent); border: 3px dashed var(--accent); font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--accent); }
+.meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-family: var(--font-data); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta b { color: var(--fg); font-weight: 600; }
+
+/* Timeline */
+.timeline { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.track { position: relative; height: 28px; }
+.track .rail { position: absolute; left: 0; right: 0; top: 11px; height: 6px; background: var(--surface-2); border-radius: 3px; }
+.track .sel { position: absolute; top: 9px; height: 10px; background: var(--accent); opacity: .85; border-radius: 2px; }
+.track input { position: absolute; inset: 0; width: 100%; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.track input::-webkit-slider-runnable-track { background: transparent; height: 28px; }
+.track input::-moz-range-track { background: transparent; }
+.track input::-webkit-slider-thumb { -webkit-appearance: none; width: 3px; height: 28px; background: var(--fg); border-radius: 1px; }
+.track input::-moz-range-thumb { width: 3px; height: 28px; background: var(--fg); border: 0; border-radius: 1px; }
+.tl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-variant-numeric: tabular-nums; }
+.tl-row .now { font-family: var(--font-data); font-size: 15px; font-weight: 600; margin-right: auto; }
+.tl-row label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.num { width: 76px; height: 32px; padding-inline: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); font-family: var(--font-data); font-size: 14px; }
+.btn.sm { height: 32px; padding-inline: 10px; font-size: 13px; border-color: var(--line); }
+
+/* Résultat */
+.result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+@media (max-width: 560px) { .result { grid-template-columns: minmax(0, 1fr); } }
+.result .size { font-family: var(--font-data); font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.result .stats { font-family: var(--font-data); font-size: 13px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+.swatches { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 1px; }
+.swatches i { width: 10px; height: 10px; display: block; outline: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
+.result .actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+.privacy { font-size: 12.5px; color: var(--muted); }
+
+/* Rail de réglages */
+.panel { position: sticky; top: env(safe-area-inset-top, 0px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); max-height: calc(100vh - 24px); }
+@media (max-width: 960px) { .panel { position: static; max-height: none; } }
+.panel-scroll { overflow-y: auto; padding: 4px 16px 8px; }
+.group { padding-block: 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+.group:last-child { border-bottom: 0; }
+.group h2 { margin: 0; font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field > .lab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; font-size: 13.5px; }
+.field > .lab output, .field > .lab .val { font-family: var(--font-data); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button { border: 1px solid var(--line); background: var(--bg); border-radius: var(--r); padding: 3px 8px; font-family: var(--font-data); font-size: 13px; cursor: pointer; }
+.chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.inline .num { width: 84px; }
+select.sel-in { height: 34px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); padding-inline: 8px; width: 100%; }
+input[type="range"] { width: 100%; }
+.seg { width: 100%; }
+.seg label { flex: 1; text-align: center; position: relative; }
+.toggle { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13.5px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; margin: 0; }
+input[type="color"] { width: 44px; height: 30px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.preset-row { display: flex; gap: 8px; }
+.preset-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.save-preset { display: flex; gap: 6px; }
+.save-preset input { flex: 1; min-width: 0; height: 32px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); padding-inline: 8px; }
+.panel-foot { border-top: 1px solid var(--line); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+.progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .12s linear; }
+.status { min-height: 1.4em; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status.err { color: var(--warn); font-weight: 600; }
+.status.ok { color: var(--ok); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .progress i { transition: none; } }
+
+html, body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <h1>Atelier GIF</h1>
+      <span class="spec">vidéo → GIF89a · local</span>
+    </div>
+    <div class="src">
+      <span class="src-name" id="srcName">Démo intégrée</span>
+      <label class="btn primary" for="fileIn">Importer une vidéo</label>
+      <input type="file" id="fileIn" accept="video/*,image/png,image/jpeg,image/webp,.mov,.mp4,.webm,.m4v,.mkv" multiple hidden>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="col" aria-label="Aperçu">
+      <div class="stage-head">
+        <div class="tabs" role="tablist" aria-label="Vue">
+          <button type="button" id="tabSource" role="tab" aria-selected="false">Source</button>
+          <button type="button" id="tabPreview" role="tab" aria-selected="true">Aperçu frame</button>
+          <button type="button" id="tabResult" role="tab" aria-selected="false" disabled>GIF exporté</button>
+        </div>
+        <div class="tabs" role="group" aria-label="Zoom">
+          <button type="button" id="zFit" aria-pressed="true">Ajuster</button>
+          <button type="button" id="z1" aria-pressed="false">100 %</button>
+          <button type="button" id="z2" aria-pressed="false">200 %</button>
+        </div>
+      </div>
+      <div class="stage fit" id="stage">
+        <div class="stage-inner">
+          <canvas id="view" width="640" height="360" aria-label="Frame courante"></canvas>
+          <img id="gifOut" alt="GIF exporté" hidden>
+        </div>
+        <span class="stage-note" id="stageNote">Aperçu · palette de cette frame</span>
+      </div>
+      <div class="meta" id="meta"></div>
+
+      <div class="timeline">
+        <div class="track">
+          <div class="rail"></div>
+          <div class="sel" id="selBar"></div>
+          <input type="range" id="scrub" min="0" max="3" step="0.001" value="0" aria-label="Tête de lecture">
+        </div>
+        <div class="tl-row">
+          <span class="now" id="tNow">0,00 s</span>
+          <button type="button" class="btn sm" id="setIn">⟦ Entrée ici</button>
+          <label for="tIn">Entrée <input class="num" id="tIn" type="number" min="0" step="0.01" value="0"></label>
+          <label for="tOut">Sortie <input class="num" id="tOut" type="number" min="0" step="0.01" value="3"></label>
+          <button type="button" class="btn sm" id="setOut">Sortie ici ⟧</button>
+          <label for="seqFps" id="seqFpsWrap" hidden>Cadence séquence <input class="num" id="seqFps" type="number" min="1" max="120" step="1" value="25"> i/s</label>
+        </div>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div>
+          <div class="size" id="rSize">—</div>
+          <div class="stats" id="rStats"></div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="dlBtn">Télécharger le GIF</button>
+          <span class="hint" id="dlHint" hidden>Clic droit sur le GIF → Enregistrer l'image sous…</span>
+        </div>
+        <div class="swatches" id="swatches" aria-label="Palette"></div>
+      </div>
+      <p class="privacy">Décodage, quantification et encodage tournent dans ton navigateur : aucun fichier n'est envoyé. Lecture native : H.264, HEVC, VP9/WebM (alpha compris), AV1, séquences PNG/JPG. Le ProRes n'est pas lu par Chrome : exporte en H.264, WebM ou séquence PNG.</p>
+    </section>
+
+    <aside class="panel" aria-label="Réglages">
+      <div class="panel-scroll">
+        <div class="group">
+          <h2>Preset</h2>
+          <div class="preset-row">
+            <select class="sel-in" id="preset" aria-label="Preset"></select>
+          </div>
+          <div class="preset-actions">
+            <button type="button" class="link" id="pSave">Enregistrer comme preset</button>
+            <button type="button" class="link" id="pExport">Exporter .json</button>
+            <button type="button" class="link" id="pImport">Importer .json</button>
+            <input type="file" id="pFile" accept=".json,application/json" hidden>
+          </div>
+          <form class="save-preset" id="pForm" hidden>
+            <input id="pName" maxlength="40" placeholder="Nom du preset" aria-label="Nom du preset">
+            <button class="btn sm" type="submit">OK</button>
+          </form>
+        </div>
+
+        <div class="group">
+          <h2>Sortie</h2>
+          <div class="field">
+            <div class="lab"><label for="width">Largeur</label><span class="val" id="hOut">× 360 px</span></div>
+            <div class="inline"><input class="num" id="width" type="number" min="16" max="1920" step="1" value="640"><div class="chips" id="widthChips"></div></div>
+          </div>
+          <div class="field">
+            <div class="lab"><span>Mise à l'échelle</span></div>
+            <div class="seg" role="radiogroup" aria-label="Mise à l'échelle">
+              <label><input type="radio" name="scaling" value="smooth">Lisse</label>
+              <label title="Plus proche voisin : pixels nets, sans lissage"><input type="radio" name="scaling" value="pixel">Pixel net</label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="lab"><label for="fps">Images/s</label><span class="val" id="delayInfo">4 cs</span></div>
+            <div class="inline"><input class="num" id="fps" type="number" min="1" max="50" step="1" value="25"><div class="chips" id="fpsChips"></div></div>
+            <p class="hint">Le GIF compte en centisecondes ; au-delà de 50 i/s les navigateurs retombent à 10 i/s.</p>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <div class="lab"><label for="speed">Vitesse</label></div>
+              <select class="sel-in" id="speed">
+                <option value="0.25">× 0,25</option><option value="0.5">× 0,5</option><option value="0.75">× 0,75</option>
+                <option value="1">× 1</option><option value="1.25">× 1,25</option><option value="1.5">× 1,5</option>
+                <option value="2">× 2</option><option value="3">× 3</option><option value="4">× 4</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="lab"><label for="loop">Boucle</label></div>
+              <select class="sel-in" id="loop">
+                <option value="0">Infinie</option><option value="1">1 lecture</option><option value="2">2 lectures</option>
+                <option value="3">3 lectures</option><option value="5">5 lectures</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <div class="lab"><span>Sens</span></div>
+            <div class="seg" role="radiogroup" aria-label="Sens de lecture">
+              <label><input type="radio" name="direction" value="forward">Avant</label>
+              <label><input type="radio" name="direction" value="reverse">Arrière</label>
+              <label><input type="radio" name="direction" value="boomerang">Boomerang</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Couleurs</h2>
+          <div class="field">
+            <div class="lab"><label for="colors">Nombre de couleurs</label><output id="colorsOut" for="colors">256</output></div>
+            <input type="range" id="colors" min="2" max="256" step="1" value="256">
+            <div class="chips" id="colorChips"></div>
+          </div>
+          <div class="field">
+            <div class="lab"><span>Palette</span></div>
+            <div class="seg" role="radiogroup" aria-label="Palette">
+              <label><input type="radio" name="palette" value="global">Globale</label>
+              <label><input type="radio" name="palette" value="motion">Mouvement</label>
+              <label><input type="radio" name="palette" value="local">Par frame</label>
+            </div>
+            <p class="hint" id="paletteHint"></p>
+          </div>
+          <div class="field">
+            <div class="lab"><label for="dither">Dithering</label></div>
+            <select class="sel-in" id="dither">
+              <option value="none">Aucun (aplats)</option>
+              <option value="bayer">Bayer · trame ordonnée</option>
+              <option value="fs">Floyd–Steinberg</option>
+              <option value="sierra">Sierra Lite</option>
+              <option value="atkinson">Atkinson</option>
+            </select>
+            <p class="hint" id="ditherHint"></p>
+          </div>
+          <div class="field" id="fStrength">
+            <div class="lab"><label for="strength">Intensité de diffusion</label><output id="strengthOut" for="strength">75 %</output></div>
+            <input type="range" id="strength" min="0" max="100" step="1" value="75">
+          </div>
+          <div class="field" id="fBayer">
+            <div class="lab"><label for="bayerScale">Échelle de trame</label><output id="bayerOut" for="bayerScale">2</output></div>
+            <input type="range" id="bayerScale" min="0" max="5" step="1" value="2">
+            <p class="hint">0 = trame marquée, moins de banding · 5 = trame discrète, plus de banding.</p>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Transparence</h2>
+          <label class="toggle" for="alpha"><input type="checkbox" id="alpha">Conserver la transparence</label>
+          <div class="field" id="fThreshold">
+            <div class="lab"><label for="alphaThreshold">Seuil alpha</label><output id="thrOut" for="alphaThreshold">128</output></div>
+            <input type="range" id="alphaThreshold" min="1" max="254" step="1" value="128">
+          </div>
+          <div class="field">
+            <div class="lab"><label for="matte">Fond (matte)</label></div>
+            <div class="inline"><input type="color" id="matte" value="#ffffff"><span class="hint" id="matteHint">Les bords semi-transparents sont fusionnés sur cette couleur.</span></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Compression</h2>
+          <label class="toggle" for="optimize"><input type="checkbox" id="optimize">Optimisation inter-frames</label>
+          <p class="hint" id="optHint">Seul le rectangle qui change est réécrit ; les frames identiques sont fusionnées.</p>
+          <div class="field" id="fTol">
+            <div class="lab"><label for="tolerance">Tolérance</label><output id="tolOut" for="tolerance">2</output></div>
+            <input type="range" id="tolerance" min="0" max="32" step="1" value="2">
+            <p class="hint">0 = sans perte. Plus haut = fichier plus léger, traînées possibles sur les zones fixes.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel-foot">
+        <button type="button" class="btn primary big" id="encodeBtn" disabled>Chargement de l'encodeur…</button>
+        <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="drop" id="drop" hidden>Dépose ta vidéo ou ta séquence d'images</div>
+
+<script src="engine.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n, d = 2) => n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const KEY_SETTINGS = 'atelier-gif:settings', KEY_PRESETS = 'atelier-gif:presets';
+  const store = {
+    get(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+
+  /* ---------------- Réglages ---------------- */
+  const DEFAULTS = { width: 640, scaling: 'smooth', fps: 25, speed: 1, direction: 'forward', loop: 0, colors: 256, palette: 'global',
+    dither: 'sierra', strength: 75, bayerScale: 2, alpha: false, alphaThreshold: 128, matte: '#ffffff', optimize: true, tolerance: 2 };
+  const PRESETS = [
+    { id: 'b:equilibre', name: 'Équilibré', s: {} },
+    { id: 'b:leger', name: 'Web léger · Slack, Notion', s: { width: 480, fps: 15, colors: 128, dither: 'bayer', bayerScale: 3, tolerance: 6 } },
+    { id: 'b:qualite', name: 'Haute qualité · Dribbble', s: { width: 800, fps: 30, colors: 256, dither: 'fs', strength: 85, tolerance: 0 } },
+    { id: 'b:flat', name: 'UI / aplats', s: { width: 640, colors: 64, dither: 'none', tolerance: 0 } },
+    { id: 'b:pixel', name: 'Pixel art', s: { scaling: 'pixel', colors: 32, dither: 'none', tolerance: 0 } },
+    { id: 'b:email', name: 'Email', s: { width: 600, fps: 12, colors: 64, palette: 'motion', dither: 'bayer', bayerScale: 2, tolerance: 8 } },
+  ];
+  const KEYS = Object.keys(DEFAULTS);
+  const clean = (o) => { const r = {}; for (const k of KEYS) if (o && o[k] !== undefined) r[k] = o[k]; return r; };
+  let S = { ...DEFAULTS, ...clean(store.get(KEY_SETTINGS, {})) };
+  let userPresets = store.get(KEY_PRESETS, []);
+  if (!Array.isArray(userPresets)) userPresets = [];
+
+  /* ---------------- Sources ---------------- */
+  let source = null, tIn = 0, tOut = 3, playhead = 0;
+  const tmpA = document.createElement('canvas'), tmpB = document.createElement('canvas');
+  function drawScaled(img, sw, sh, ctx, dw, dh, mode) {
+    ctx.clearRect(0, 0, dw, dh);
+    if (mode === 'pixel' || (sw <= dw * 2 && sh <= dh * 2)) {
+      ctx.imageSmoothingEnabled = mode !== 'pixel'; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, sw, sh, 0, 0, dw, dh); return;
+    }
+    let src = img, cw = sw, ch = sh, flip = false;
+    while (cw > dw * 2 && ch > dh * 2) {
+      const nw = Math.max(dw, Math.round(cw / 2)), nh = Math.max(dh, Math.round(ch / 2));
+      const c = flip ? tmpB : tmpA; flip = !flip;
+      if (c.width !== nw || c.height !== nh) { c.width = nw; c.height = nh; }
+      const cx = c.getContext('2d');
+      cx.clearRect(0, 0, nw, nh); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+      cx.drawImage(src, 0, 0, cw, ch, 0, 0, nw, nh);
+      src = c; cw = nw; ch = nh;
+    }
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, cw, ch, 0, 0, dw, dh);
+  }
+
+  // Démo procédurale (boucle parfaite de 3 s) : dégradés, flou, aplats — de quoi juger palette et dithering.
+  function demoSource() {
+    const W = 960, H = 540, D = 3, cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const c = cv.getContext('2d');
+    function paint(t) {
+      const a = (t / D) * Math.PI * 2;
+      const g = c.createLinearGradient(0, H, W, 0);
+      g.addColorStop(0, '#0020AD'); g.addColorStop(0.45, '#6A3FD9'); g.addColorStop(0.75, '#F2687A'); g.addColorStop(1, '#FFD9A0');
+      c.fillStyle = g; c.fillRect(0, 0, W, H);
+      const bx = W / 2 + Math.cos(a) * 250, by = H / 2 + Math.sin(a * 2) * 90;
+      const rg = c.createRadialGradient(bx, by, 10, bx, by, 220);
+      rg.addColorStop(0, 'rgba(255,248,232,0.95)'); rg.addColorStop(0.35, 'rgba(255,214,160,0.55)'); rg.addColorStop(1, 'rgba(255,214,160,0)');
+      c.fillStyle = rg; c.fillRect(0, 0, W, H);
+      c.save(); c.translate(W / 2, H / 2); c.rotate(a / 6);
+      for (let i = 0; i < 12; i++) {
+        const ang = (i / 12) * Math.PI * 2, r = 190 + Math.sin(a * 2 + i) * 14;
+        c.beginPath(); c.arc(Math.cos(ang) * r, Math.sin(ang) * r, i % 3 === 0 ? 14 : 8, 0, Math.PI * 2);
+        c.fillStyle = i % 3 === 0 ? '#FFF8E8' : 'rgba(255,248,232,0.6)'; c.fill();
+      }
+      c.restore();
+      const s = 1 + Math.sin(a * 2) * 0.04;
+      c.save(); c.translate(W / 2, H / 2 + 8); c.scale(s, s);
+      c.font = '800 168px "Funnel Display", system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillStyle = 'rgba(10,10,10,0.25)'; c.fillText('GIF', 6, 10);
+      c.fillStyle = '#FFF8E8'; c.fillText('GIF', 0, 0);
+      c.restore();
+      c.fillStyle = '#0A0A0A'; c.fillRect(0, H - 40, W, 40);
+      c.fillStyle = '#FFF8E8'; c.font = '600 18px Inconsolata, monospace'; c.textAlign = 'left'; c.textBaseline = 'middle';
+      c.fillText('DÉMO · 960×540 · 3,00 s · boucle', 20, H - 20);
+      c.fillStyle = '#8E9CFF'; c.fillRect(W - 220, H - 26, 200 * ((t % D) / D), 12);
+    }
+    return { kind: 'demo', id: 'demo', fileBase: 'demo-atelier-gif', name: 'Démo intégrée · 960×540 · 3,00 s', width: W, height: H, duration: D, alpha: false,
+      async drawFrame(t, ctx, w, h, mode) { paint(t); drawScaled(cv, W, H, ctx, w, h, mode); } };
+  }
+
+  function seekVideo(v, t) {
+    return new Promise((res) => {
+      const target = Math.min(Math.max(0, t), Math.max(0, v.duration - 0.001));
+      if (Math.abs(v.currentTime - target) < 1e-4 && v.readyState >= 2) return res();
+      let to;
+      const done = () => { v.removeEventListener('seeked', done); clearTimeout(to); res(); };
+      to = setTimeout(done, 4000);
+      v.addEventListener('seeked', done);
+      v.currentTime = target;
+    });
+  }
+
+  async function loadVideo(file) {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
+    v.src = URL.createObjectURL(file);
+    await new Promise((res, rej) => {
+      const to = setTimeout(() => rej(new Error('decode')), 20000);
+      v.addEventListener('loadeddata', () => { clearTimeout(to); res(); }, { once: true });
+      v.addEventListener('error', () => { clearTimeout(to); rej(new Error('decode')); }, { once: true });
+    });
+    if (!isFinite(v.duration) || !v.duration) {
+      await new Promise((res) => {
+        const to = setTimeout(res, 5000);
+        v.addEventListener('durationchange', function f() { if (isFinite(v.duration)) { v.removeEventListener('durationchange', f); clearTimeout(to); res(); } });
+        v.currentTime = 1e7;
+      });
+      await seekVideo(v, 0);
+    }
+    if (!v.videoWidth || !isFinite(v.duration)) throw new Error('decode');
+    return { kind: 'video', id: 'v' + Date.now(), name: file.name, fileBase: file.name, el: v, width: v.videoWidth, height: v.videoHeight, duration: v.duration,
+      async drawFrame(t, ctx, w, h, mode) { await seekVideo(v, t); drawScaled(v, v.videoWidth, v.videoHeight, ctx, w, h, mode); },
+      dispose() { URL.revokeObjectURL(v.src); v.remove(); } };
+  }
+
+  async function loadSequence(files) {
+    const coll = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+    files.sort((a, b) => coll.compare(a.name, b.name));
+    const first = await createImageBitmap(files[0]);
+    let seqFps = S.fps;
+    let lastI = -1, lastBmp = first;
+    const label = () => `${files[0].name} … ${files.length} images @ ${seqFps} i/s`;
+    return { kind: 'seq', id: 's' + Date.now(), name: label(), fileBase: files[0].name.replace(/[_\-. ]?\d+\.[^.]+$/, '') || 'sequence', seqFps,
+      width: first.width, height: first.height, duration: files.length / seqFps,
+      setFps(f) { seqFps = f; this.seqFps = f; this.duration = files.length / f; this.name = label(); this.id = 's' + Date.now(); },
+      async drawFrame(t, ctx, w, h, mode) {
+        const i = Math.min(files.length - 1, Math.max(0, Math.floor(t * seqFps + 1e-4)));
+        if (i !== lastI) { if (lastBmp && lastBmp !== first) lastBmp.close(); lastBmp = i === 0 ? first : await createImageBitmap(files[i]); lastI = i; }
+        drawScaled(lastBmp, lastBmp.width, lastBmp.height, ctx, w, h, mode);
+      } };
+  }
+
+  async function detectAlpha(src) {
+    const cv = document.createElement('canvas'); cv.width = 96; cv.height = Math.max(1, Math.round(96 * src.height / src.width));
+    const c = cv.getContext('2d', { willReadFrequently: true });
+    await src.drawFrame(Math.min(src.duration / 2, 0.5), c, cv.width, cv.height, 'smooth');
+    const d = c.getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    return false;
+  }
+
+  /* ---------------- Calculs dérivés ---------------- */
+  const outSize = () => {
+    const w = Math.max(16, Math.min(1920, Math.round(S.width) || 640));
+    const h = source ? Math.max(1, Math.round((w * source.height) / source.width)) : Math.round(w * 9 / 16);
+    return { w, h };
+  };
+  const frameCount = () => Math.max(1, Math.round(((tOut - tIn) / S.speed) * S.fps));
+  const orderedCount = () => { const n = frameCount(); return S.direction === 'boomerang' && n > 2 ? n * 2 - 2 : n; };
+  const engineOpts = () => {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(S.matte) || [0, 'ff', 'ff', 'ff'];
+    return { colors: S.colors, palette: S.palette, dither: S.dither, strength: S.strength / 100, bayerScale: S.bayerScale,
+      alpha: S.alpha, alphaThreshold: S.alphaThreshold, matte: [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)],
+      optimize: S.optimize, tolerance: S.tolerance, loop: +S.loop };
+  };
+  const extractKey = () => JSON.stringify([source && source.id, fmt(tIn, 3), fmt(tOut, 3), S.fps, S.speed, outSize().w, S.scaling]);
+
+  /* ---------------- UI : remplissage ---------------- */
+  function chips(el, values, key, label = (v) => v) {
+    el.innerHTML = '';
+    for (const v of values) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = label(v); b.dataset.v = v;
+      b.addEventListener('click', () => set({ [key]: v }));
+      el.appendChild(b);
+    }
+  }
+  chips($('widthChips'), [320, 480, 640, 800, 1080], 'width');
+  chips($('fpsChips'), [10, 12, 15, 20, 24, 25, 30, 50], 'fps');
+  chips($('colorChips'), [16, 32, 64, 128, 256], 'colors');
+
+  function fillPresets() {
+    const sel = $('preset'); sel.innerHTML = '';
+    const cur = new Option('— Réglages actuels —', ''); sel.add(cur);
+    const g1 = document.createElement('optgroup'); g1.label = 'Presets';
+    PRESETS.forEach((p) => g1.appendChild(new Option(p.name, p.id)));
+    sel.add(g1);
+    if (userPresets.length) {
+      const g2 = document.createElement('optgroup'); g2.label = 'Mes presets';
+      userPresets.forEach((p, i) => g2.appendChild(new Option(p.name, 'u:' + i)));
+      sel.add(g2);
+    }
+    sel.value = '';
+  }
+
+  const HINTS = {
+    palette: {
+      global: 'Une palette pour tout le GIF : pas de scintillement, meilleure compression.',
+      motion: 'Palette calculée sur ce qui bouge : idéal pour les fonds fixes et captures d’écran.',
+      local: 'Une palette par frame : plus de couleurs au total, fichier plus lourd, risque de scintillement.',
+    },
+    dither: {
+      none: 'Aplats nets, fichier le plus léger. Bandes visibles sur les dégradés.',
+      bayer: 'Trame fixe d’une frame à l’autre : compresse bien avec l’optimisation inter-frames.',
+      fs: 'Diffusion d’erreur classique : dégradés doux, grain qui bouge, fichier plus lourd.',
+      sierra: 'Diffusion plus légère que Floyd–Steinberg (défaut de ffmpeg) : bon compromis.',
+      atkinson: 'Diffuse 6/8 de l’erreur : contraste préservé, rendu « Mac classique ».',
+    },
+  };
+
+  function render() {
+    const { w, h } = outSize();
+    $('width').value = S.width; $('fps').value = S.fps; $('speed').value = String(S.speed); $('loop').value = String(S.loop);
+    $('colors').value = S.colors; $('colorsOut').textContent = S.colors;
+    $('dither').value = S.dither; $('strength').value = S.strength; $('strengthOut').textContent = S.strength + ' %';
+    $('bayerScale').value = S.bayerScale; $('bayerOut').textContent = S.bayerScale;
+    $('alpha').checked = S.alpha; $('alphaThreshold').value = S.alphaThreshold; $('thrOut').textContent = S.alphaThreshold;
+    $('matte').value = S.matte; $('optimize').checked = S.optimize; $('tolerance').value = S.tolerance; $('tolOut').textContent = S.tolerance;
+    for (const name of ['scaling', 'palette', 'direction'])
+      document.querySelectorAll(`input[name="${name}"]`).forEach((r) => { r.checked = r.value === S[name]; });
+    for (const [id, key] of [['widthChips', 'width'], ['fpsChips', 'fps'], ['colorChips', 'colors']])
+      $(id).querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.v === +S[key])));
+    $('hOut').textContent = `× ${h} px`;
+    const n = orderedCount();
+    const d = GifEngine.delaysFor(Math.min(n, 12), S.fps);
+    const uniq = [...new Set(d)];
+    $('delayInfo').textContent = uniq.length > 1 ? `délais ${uniq.join('/')} cs alternés` : `délai ${uniq[0]} cs`;
+    $('paletteHint').textContent = HINTS.palette[S.palette];
+    $('ditherHint').textContent = HINTS.dither[S.dither];
+    $('fStrength').hidden = !['fs', 'sierra', 'atkinson'].includes(S.dither);
+    $('fBayer').hidden = S.dither !== 'bayer';
+    $('fThreshold').hidden = !S.alpha;
+    $('optimize').disabled = S.alpha;
+    $('optHint').textContent = S.alpha ? 'Désactivée avec la transparence : chaque frame est réécrite en entier.' : 'Seul le rectangle qui change est réécrit ; les frames identiques sont fusionnées.';
+    $('fTol').hidden = !S.optimize || S.alpha;
+    const dur = n / S.fps, mem = (frameCount() * w * h * 4) / 1048576;
+    $('meta').innerHTML = `<span><b>${w} × ${h}</b> px · <b>${n}</b> frames · <b>${fmt(dur)}</b> s</span><span>≈ ${fmt(mem, 0)} Mo de RAM à l'extraction</span>`;
+    const tl = $('scrub'), D = source ? source.duration : 1;
+    tl.max = String(D);
+    $('selBar').style.left = (tIn / D) * 100 + '%';
+    $('selBar').style.width = ((tOut - tIn) / D) * 100 + '%';
+    $('tIn').value = tIn.toFixed(2); $('tOut').value = tOut.toFixed(2);
+    $('tIn').max = $('tOut').max = String(D);
+    $('tNow').textContent = fmt(playhead) + ' s';
+  }
+
+  let saveT = 0;
+  function set(patch, opts = {}) {
+    for (const k of Object.keys(patch)) {
+      let v = patch[k];
+      if (['width', 'fps', 'colors', 'strength', 'bayerScale', 'alphaThreshold', 'tolerance', 'loop'].includes(k)) v = Math.round(+v);
+      if (k === 'speed') v = +v;
+      if (k === 'fps') v = Math.max(1, Math.min(50, v || 25));
+      if (k === 'colors') v = Math.max(2, Math.min(256, v || 256));
+      if (k === 'width') v = Math.max(16, Math.min(1920, v || 640));
+      S[k] = v;
+    }
+    if (!opts.keepPreset) $('preset').value = '';
+    render();
+    clearTimeout(saveT); saveT = setTimeout(() => store.set(KEY_SETTINGS, S), 300);
+    schedulePreview();
+  }
+
+  /* ---------------- Liaisons ---------------- */
+  const bindNum = (id, key) => $(id).addEventListener('change', (e) => set({ [key]: e.target.value }));
+  bindNum('width', 'width'); bindNum('fps', 'fps');
+  $('speed').addEventListener('change', (e) => set({ speed: e.target.value }));
+  $('loop').addEventListener('change', (e) => set({ loop: e.target.value }));
+  $('dither').addEventListener('change', (e) => set({ dither: e.target.value }));
+  for (const [id, key] of [['colors', 'colors'], ['strength', 'strength'], ['bayerScale', 'bayerScale'], ['alphaThreshold', 'alphaThreshold'], ['tolerance', 'tolerance']])
+    $(id).addEventListener('input', (e) => set({ [key]: e.target.value }));
+  $('alpha').addEventListener('change', (e) => set({ alpha: e.target.checked }));
+  $('optimize').addEventListener('change', (e) => set({ optimize: e.target.checked }));
+  $('matte').addEventListener('input', (e) => set({ matte: e.target.value }));
+  for (const name of ['scaling', 'palette', 'direction'])
+    document.querySelectorAll(`input[name="${name}"]`).forEach((r) => r.addEventListener('change', () => set({ [name]: r.value })));
+
+  $('preset').addEventListener('change', (e) => {
+    const id = e.target.value;
+    if (!id) return;
+    let s;
+    if (id.startsWith('b:')) s = PRESETS.find((p) => p.id === id).s;
+    else s = (userPresets[+id.slice(2)] || {}).s || {};
+    set({ ...DEFAULTS, ...clean(s), alpha: S.alpha, alphaThreshold: S.alphaThreshold, matte: S.matte, ...(id.startsWith('u:') ? clean(s) : {}) }, { keepPreset: true });
+    status(`Preset « ${e.target.selectedOptions[0].text} » appliqué.`);
+  });
+  $('pSave').addEventListener('click', () => { $('pForm').hidden = false; $('pName').focus(); });
+  $('pForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('pName').value.trim();
+    if (!name) return;
+    userPresets.push({ name, s: clean(S) });
+    store.set(KEY_PRESETS, userPresets);
+    $('pName').value = ''; $('pForm').hidden = true;
+    fillPresets(); status(`Preset « ${name} » enregistré dans ce navigateur.`, 'ok');
+  });
+  $('pExport').addEventListener('click', () => {
+    const data = JSON.stringify({ app: 'atelier-gif', version: 1, settings: clean(S) }, null, 2);
+    offerFile('atelier-gif-preset.json', data);
+  });
+  $('pImport').addEventListener('click', () => $('pFile').click());
+  $('pFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const j = JSON.parse(await f.text());
+      const s = clean(j.settings || j);
+      if (!Object.keys(s).length) throw new Error();
+      const name = f.name.replace(/\.json$/i, '');
+      userPresets.push({ name, s }); store.set(KEY_PRESETS, userPresets); fillPresets();
+      set({ ...s }); status(`Preset « ${name} » importé et appliqué.`, 'ok');
+    } catch { status('Ce fichier n’est pas un preset Atelier GIF valide.', 'err'); }
+  });
+
+  /* ---------------- Vue / zoom ---------------- */
+  let view = 'preview', zoom = 'fit';
+  const viewCv = $('view'), vctx = viewCv.getContext('2d');
+  const work = document.createElement('canvas'), wctx = work.getContext('2d', { willReadFrequently: true });
+  function setView(v) {
+    view = v;
+    for (const [id, val] of [['tabSource', 'source'], ['tabPreview', 'preview'], ['tabResult', 'result']]) $(id).setAttribute('aria-selected', String(v === val));
+    $('gifOut').hidden = v !== 'result'; viewCv.hidden = v === 'result';
+    if (v === 'result' && result) $('stageNote').textContent = `GIF exporté · ${result.stats.width}×${result.stats.height} · lu par le navigateur`;
+    applyZoom(); schedulePreview(true);
+  }
+  function applyZoom() {
+    const st = $('stage');
+    st.classList.toggle('fit', zoom === 'fit'); st.classList.toggle('zoom', zoom === '2');
+    for (const [id, val] of [['zFit', 'fit'], ['z1', '1'], ['z2', '2']]) $(id).setAttribute('aria-pressed', String(zoom === val));
+    const k = zoom === '2' ? 2 : 1;
+    for (const el of [viewCv, $('gifOut')]) {
+      const w = el === viewCv ? viewCv.width : el.naturalWidth || 0, h = el === viewCv ? viewCv.height : el.naturalHeight || 0;
+      if (zoom === 'fit') { el.style.width = ''; el.style.height = ''; }
+      else { el.style.width = w * k + 'px'; el.style.height = h * k + 'px'; }
+    }
+  }
+  $('tabSource').addEventListener('click', () => setView('source'));
+  $('tabPreview').addEventListener('click', () => setView('preview'));
+  $('tabResult').addEventListener('click', () => setView('result'));
+  $('zFit').addEventListener('click', () => { zoom = 'fit'; applyZoom(); });
+  $('z1').addEventListener('click', () => { zoom = '1'; applyZoom(); });
+  $('z2').addEventListener('click', () => { zoom = '2'; applyZoom(); });
+
+  /* ---------------- Aperçu frame ---------------- */
+  let quantize = null, cache = null, palMemo = null, previewBusy = false, previewAgain = false, previewT = 0;
+  function schedulePreview(now) {
+    clearTimeout(previewT);
+    previewT = setTimeout(drawPreview, now ? 0 : 120);
+  }
+  async function drawPreview() {
+    if (!source || view === 'result' || job) return;
+    if (previewBusy) { previewAgain = true; return; }
+    previewBusy = true;
+    try {
+      const { w, h } = outSize();
+      if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
+      await source.drawFrame(playhead + 0.001, wctx, w, h, S.scaling);
+      if (viewCv.width !== w || viewCv.height !== h) { viewCv.width = w; viewCv.height = h; }
+      if (view === 'source' || !quantize) {
+        vctx.clearRect(0, 0, w, h); vctx.drawImage(work, 0, 0);
+        $('stageNote').textContent = quantize ? 'Source · ' + w + '×' + h : 'Source · encodeur en chargement';
+      } else {
+        const img = wctx.getImageData(0, 0, w, h);
+        const o = engineOpts();
+        let pal = null, note = 'palette de cette frame';
+        if (o.palette !== 'local' && cache && cache.key === extractKey()) {
+          const pk = JSON.stringify([cache.key, o.colors, o.palette, o.alpha, o.alphaThreshold, o.matte, o.optimize]);
+          if (!palMemo || palMemo.key !== pk) palMemo = { key: pk, pal: GifEngine.globalPalette(cache.frames, o, quantize) };
+          pal = palMemo.pal; note = 'palette globale de l’export';
+        }
+        const r = GifEngine.previewFrame(img.data, w, h, o, quantize, pal);
+        vctx.putImageData(new ImageData(r.data, w, h), 0, 0);
+        $('stageNote').textContent = `Aperçu · ${r.palette.length / 3} couleurs · ${note}`;
+      }
+      applyZoom();
+    } catch (e) { console.error(e); }
+    previewBusy = false;
+    if (previewAgain) { previewAgain = false; drawPreview(); }
+  }
+
+  /* ---------------- Timeline ---------------- */
+  const clampT = (t) => Math.max(0, Math.min(source ? source.duration : 0, t));
+  $('scrub').addEventListener('input', (e) => { playhead = +e.target.value; $('tNow').textContent = fmt(playhead) + ' s'; if (view === 'result') setView('preview'); else schedulePreview(); });
+  function setRange(a, b) {
+    const D = source.duration, minLen = 1 / Math.max(1, S.fps);
+    a = clampT(a); b = clampT(b);
+    if (b - a < minLen) { if (b + minLen <= D) b = a + minLen; else a = Math.max(0, b - minLen); }
+    tIn = a; tOut = b; render();
+  }
+  $('setIn').addEventListener('click', () => setRange(playhead, Math.max(tOut, playhead)));
+  $('setOut').addEventListener('click', () => setRange(Math.min(tIn, playhead), playhead));
+  $('tIn').addEventListener('change', (e) => setRange(+e.target.value || 0, tOut));
+  $('seqFps').addEventListener('change', (e) => {
+    if (!source || source.kind !== 'seq') return;
+    const f = Math.max(1, Math.min(120, Math.round(+e.target.value) || 25));
+    e.target.value = f; source.setFps(f); cache = null; palMemo = null;
+    $('srcName').textContent = source.name;
+    playhead = Math.min(playhead, source.duration); $('scrub').value = String(playhead);
+    setRange(0, source.duration); schedulePreview();
+  });
+  $('tOut').addEventListener('change', (e) => setRange(tIn, +e.target.value || 0));
+
+  /* ---------------- Import ---------------- */
+  async function useSource(src) {
+    if (source && source.dispose) source.dispose();
+    const raw = src.drawFrame.bind(src);
+    let lock = Promise.resolve();
+    src.drawFrame = (...a) => { const p = lock.then(() => raw(...a)); lock = p.catch(() => {}); return p; };
+    source = src; cache = null; palMemo = null;
+    tIn = 0; tOut = src.duration > 10 ? 5 : src.duration; playhead = 0;
+    $('srcName').textContent = src.name;
+    $('scrub').value = '0';
+    $('seqFpsWrap').hidden = src.kind !== 'seq';
+    if (src.kind === 'seq') $('seqFps').value = src.seqFps;
+    let alpha = false;
+    try { alpha = await detectAlpha(src); } catch {}
+    const patch = {};
+    if (alpha !== S.alpha) patch.alpha = alpha;
+    set(patch, { keepPreset: true });
+    setView('preview');
+    return { alpha };
+  }
+  async function loadFiles(list) {
+    const files = [...list];
+    const vid = files.find((f) => f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|mkv|ogv)$/i.test(f.name));
+    const imgs = files.filter((f) => /^image\/(png|jpeg|webp|bmp)$/.test(f.type));
+    if (!vid && !imgs.length) { status('Format non reconnu. Dépose une vidéo (.mp4, .webm, .mov H.264) ou des images PNG/JPG.', 'err'); return; }
+    if (job) job.cancelled = true;
+    status('Lecture du fichier…');
+    try {
+      const src = vid ? await loadVideo(vid) : await loadSequence(imgs);
+      const { alpha } = await useSource(src);
+      const extra = src.duration > 10 ? ` Sélection réduite aux 5 premières secondes (${fmt(src.duration)} s au total).` : '';
+      status(`${src.width}×${src.height} · ${fmt(src.duration)} s chargé.${alpha ? ' Transparence détectée : activée.' : ''}${extra}`, 'ok');
+    } catch (e) {
+      status(vid ? 'Le navigateur ne sait pas décoder ce fichier (souvent ProRes ou DNxHR). Exporte en H.264 .mp4, en WebM, ou en séquence PNG pour garder l’alpha.' : 'Impossible de lire ces images.', 'err');
+    }
+  }
+  $('fileIn').addEventListener('change', (e) => { if (e.target.files.length) loadFiles(e.target.files); e.target.value = ''; });
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('drop').hidden = false; } });
+  window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').hidden = true; });
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
+
+  /* ---------------- Encodage ---------------- */
+  let job = null, result = null, resultUrl = null;
+  const mc = new MessageChannel(), waiters = [];
+  mc.port1.onmessage = () => { const r = waiters.shift(); if (r) r(); };
+  const tick = () => new Promise((r) => { waiters.push(r); mc.port2.postMessage(0); });
+  let lastPaint = 0;
+  const tickPaint = () => { const now = performance.now(); if (now - lastPaint > 60) { lastPaint = now; return new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 120); }); } return tick(); };
+  function setProgress(p, label) { $('bar').style.width = Math.round(p * 100) + '%'; if (label) status(`${label}… ${Math.round(p * 100)} %`); }
+  function status(msg, kind) { const el = $('status'); el.textContent = msg || ''; el.className = 'status' + (kind ? ' ' + kind : ''); }
+
+  async function extract(j) {
+    const { w, h } = outSize(), N = frameCount();
+    if (N * w * h * 4 > 1.6e9) throw new Error('mem');
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const c = cv.getContext('2d', { willReadFrequently: true });
+    const frames = [];
+    for (let i = 0; i < N; i++) {
+      if (j.cancelled) throw new Error('cancelled');
+      const t = Math.min(tIn + (i / S.fps) * S.speed + 0.001, source.duration - 0.0005);
+      await source.drawFrame(t, c, w, h, S.scaling);
+      frames.push({ data: c.getImageData(0, 0, w, h).data, width: w, height: h });
+      setProgress(0.5 * ((i + 1) / N), 'Extraction des frames');
+      await tickPaint();
+    }
+    return frames;
+  }
+
+  async function runEncode() {
+    if (!quantize || !source) return;
+    if (job) { job.cancelled = true; return; }
+    const j = (job = { cancelled: false });
+    $('encodeBtn').textContent = 'Annuler';
+    const t0 = performance.now();
+    try {
+      const key = extractKey();
+      let base = 0;
+      if (!cache || cache.key !== key) {
+        cache = null; palMemo = null;
+        const frames = await extract(j);
+        cache = { key, frames }; base = 0.5;
+      }
+      let frames = cache.frames;
+      if (S.direction === 'reverse') frames = frames.slice().reverse();
+      else if (S.direction === 'boomerang' && frames.length > 2) frames = frames.concat(frames.slice(1, -1).reverse());
+      const delays = GifEngine.delaysFor(frames.length, S.fps);
+      const r = await GifEngine.encode(frames, delays, engineOpts(), quantize, {
+        tick: tickPaint, cancelled: () => j.cancelled,
+        progress: (p, label) => setProgress(base + p * (1 - base), label),
+      });
+      showResult(r, (performance.now() - t0) / 1000);
+    } catch (e) {
+      if (e.message === 'cancelled') status('Encodage annulé.');
+      else if (e.message === 'mem') status('Trop lourd pour la mémoire du navigateur : réduis la largeur, les images/s ou la durée.', 'err');
+      else { console.error(e); status('L’encodage a échoué : ' + (e.message || e), 'err'); }
+      setProgress(0);
+    } finally {
+      job = null;
+      $('encodeBtn').textContent = 'Encoder le GIF';
+    }
+  }
+  $('encodeBtn').addEventListener('click', runEncode);
+
+  const fmtSize = (b) => b >= 1048576 ? `${fmt(b / 1048576, 2)} Mo` : `${fmt(b / 1024, 0)} Ko`;
+  function showResult(r, secs) {
+    result = r;
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    resultUrl = URL.createObjectURL(new Blob([r.bytes], { type: 'image/gif' }));
+    const img = $('gifOut');
+    img.onload = () => applyZoom();
+    img.src = resultUrl;
+    const s = r.stats;
+    $('rSize').textContent = fmtSize(r.bytes.length);
+    const merged = s.merged ? ` (${s.merged} fusionnées)` : '';
+    const loopTxt = +S.loop === 0 ? 'boucle infinie' : +S.loop === 1 ? '1 lecture' : `${S.loop} lectures`;
+    $('rStats').textContent = `${s.width}×${s.height} · ${s.frames} frames écrites${merged} · ${fmt(s.durationCs / 100)} s · ${S.palette === 'local' ? 'palettes par frame' : s.colors + ' couleurs'} · ${loopTxt} · encodé en ${fmt(secs, 1)} s`;
+    const sw = $('swatches'); sw.innerHTML = '';
+    if (s.palette) for (let i = 0; i < s.palette.length; i += 3) {
+      const el = document.createElement('i'); el.style.background = `rgb(${s.palette[i]},${s.palette[i + 1]},${s.palette[i + 2]})`;
+      el.title = '#' + [0, 1, 2].map((k) => s.palette[i + k].toString(16).padStart(2, '0')).join('');
+      sw.appendChild(el);
+    }
+    $('result').hidden = false;
+    $('tabResult').disabled = false;
+    setView('result');
+    setProgress(1);
+    status(`GIF prêt : ${fmtSize(r.bytes.length)}.`, 'ok');
+  }
+
+  /* ---------------- Téléchargement (capacité downloads) ---------------- */
+  const dlPromise = (async () => { try { return window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch { return null; } })();
+  dlPromise.then((d) => { if (!d && window.claude) { $('dlHint').hidden = false; } });
+  async function offerFile(filename, data) {
+    const dl = await dlPromise;
+    if (!dl && !window.claude) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+      a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      status(`${filename} téléchargé.`, 'ok'); return;
+    }
+    if (!dl) { status('Téléchargement indisponible dans cette vue. Pour le GIF : clic droit → Enregistrer l’image sous…', 'err'); return; }
+    try { await dl.save({ filename, data }); status(`${filename} enregistré.`, 'ok'); }
+    catch (e) {
+      const code = e && e.code;
+      if (code === 'declined') status('Enregistrement annulé.');
+      else if (code === 'rate_limited') status('Une fenêtre d’enregistrement est déjà ouverte.');
+      else status('Enregistrement indisponible ici. Pour le GIF : clic droit → Enregistrer l’image sous…', 'err');
+    }
+  }
+  $('dlBtn').addEventListener('click', () => {
+    if (!result) return;
+    const base = ((source && (source.fileBase || source.name)) || 'animation').replace(/\.[^.]+$/, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'animation';
+    offerFile(`${base}_${result.stats.width}px_${S.fps}fps_${S.palette === 'local' ? 'local' : result.stats.colors + 'c'}.gif`, new Blob([result.bytes], { type: 'image/gif' }));
+  });
+
+  /* ---------------- Démarrage ---------------- */
+  fillPresets();
+  render();
+  (async () => {
+    try { await document.fonts.load('800 168px "Funnel Display"'); } catch {}
+    await useSource(demoSource());
+    status('Démo chargée. Importe une vidéo ou dépose-la n’importe où.');
+    try {
+      const m = await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
+      quantize = m.quantize;
+      $('encodeBtn').disabled = false; $('encodeBtn').textContent = 'Encoder le GIF';
+      schedulePreview(true);
+      await runEncode();
+    } catch (e) {
+      console.error(e);
+      $('encodeBtn').textContent = 'Encodeur indisponible';
+      status('Le quantificateur (gifenc) n’a pas pu se charger. Vérifie la connexion puis recharge la page.', 'err');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
